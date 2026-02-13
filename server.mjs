@@ -1,11 +1,15 @@
 import { createServer } from 'http';
 import { readdir, readFile, stat, writeFile, unlink, access } from 'fs/promises';
-import { join, extname } from 'path';
+import { join, extname, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { randomBytes } from 'crypto';
 
 const execAsync = promisify(exec);
+
+// Node 18+ 兼容：获取当前文件所在目录
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // 自动生成 API Key（如果未设置）
 function generateApiKey() {
@@ -13,11 +17,11 @@ function generateApiKey() {
 }
 
 const PORT = process.env.PORT || 3457;
-const DOCS_DIR = join(import.meta.dirname, 'docs');
-const USERS_FILE = join(import.meta.dirname, 'users.json');
+const DOCS_DIR = join(__dirname, 'docs');
+const USERS_FILE = join(__dirname, 'users.json');
 const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
-const GIT_REPO_PATH = process.env.GIT_REPO_PATH || import.meta.dirname;
+const GIT_REPO_PATH = process.env.GIT_REPO_PATH || __dirname;
 
 // 访问鉴权配置
 const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
@@ -561,7 +565,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log(`⚠️  AUTO-GENERATED! Please save this key.`);
 
     // 尝试保存到 .env 文件
-    const envPath = join(import.meta.dirname, '.env');
+    const envPath = join(__dirname, '.env');
     try {
       const envContent = `# Docs Share Configuration
 # Auto-generated on first run: ${new Date().toISOString()}
