@@ -93,10 +93,52 @@ install() {
 
     detect_os
 
+    # 交互式选择安装路径
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📂 安装路径配置"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    info "选择安装位置："
+    echo "  1) 标准位置 - $HOME/.docs-share 和 $HOME/docs-share-data（推荐）"
+    echo "  2) 当前目录 - $(pwd)/install 和 $(pwd)/data"
+    echo "  3) 自定义路径"
+    echo ""
+    read -p "请选择 [1-3, 默认 1]: " path_choice < /dev/tty
+
+    case ${path_choice:-1} in
+        1)
+            INSTALL_DIR="$HOME/.docs-share"
+            DATA_DIR="$HOME/docs-share-data"
+            ;;
+        2)
+            INSTALL_DIR="$(pwd)/install"
+            DATA_DIR="$(pwd)/data"
+            ;;
+        3)
+            echo ""
+            read -p "安装目录 (程序文件): " custom_install_dir < /dev/tty
+            read -p "数据目录 (文档和配置): " custom_data_dir < /dev/tty
+            INSTALL_DIR="${custom_install_dir:-$HOME/.docs-share}"
+            DATA_DIR="${custom_data_dir:-$HOME/docs-share-data}"
+            ;;
+        *)
+            INSTALL_DIR="$HOME/.docs-share"
+            DATA_DIR="$HOME/docs-share-data"
+            ;;
+    esac
+
+    success "安装目录: $INSTALL_DIR"
+    success "数据目录: $DATA_DIR"
+    echo ""
+
     # 选择安装模式
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 安装模式"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
     echo "请选择安装模式："
     echo "  1) Docker 容器运行（推荐）"
-    echo "  2) PM2 进程管理（需要 Node.js >= 18）"
+    echo "  2) PM2 进程管理（需要 Node.js >= 20）"
     echo ""
     read -p "请选择 [1-2]: " mode < /dev/tty
 
