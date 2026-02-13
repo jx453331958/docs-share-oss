@@ -661,6 +661,21 @@ configure_webhook_docker() {
     local CONFIGURED_PORT=$(grep "PORT=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | cut -d'=' -f2 | tr -d ' "' | tr -d '-')
     local CONFIGURED_API_KEY=$(grep "API_KEY=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | cut -d'=' -f2 | tr -d ' "' | tr -d '-')
 
+    # 验证提取的配置
+    if [ -z "$CONFIGURED_PORT" ]; then
+        error "无法从配置文件中读取端口号"
+        error "备份文件: $DATA_DIR/docker-compose.yml.backup"
+        return 1
+    fi
+
+    if [ -z "$CONFIGURED_API_KEY" ]; then
+        error "无法从配置文件中读取 API Key"
+        error "备份文件: $DATA_DIR/docker-compose.yml.backup"
+        return 1
+    fi
+
+    info "检测到配置: 端口=$CONFIGURED_PORT"
+
     # 更新 volumes 挂载点和环境变量
     cat > "$DATA_DIR/docker-compose.yml" << EOF
 services:
