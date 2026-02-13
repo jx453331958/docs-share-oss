@@ -231,19 +231,15 @@
     <div class="login-card">
         <div class="login-header">
             <div class="login-logo"><span>&#9670;</span> Docs Share</div>
-            <div class="login-subtitle">请登录以访问文档</div>
+            <div class="login-subtitle">请输入密码以访问文档</div>
         </div>
 
         <div class="error-msg" id="errorMsg"></div>
 
         <form id="loginForm" onsubmit="handleLogin(event)">
             <div class="form-group">
-                <label class="form-label" for="username">用户名</label>
-                <input type="text" class="form-input" id="username" name="username" placeholder="输入用户名" required autocomplete="username" autofocus>
-            </div>
-            <div class="form-group">
                 <label class="form-label" for="password">密码</label>
-                <input type="password" class="form-input" id="password" name="password" placeholder="输入密码" required autocomplete="current-password">
+                <input type="password" class="form-input" id="password" name="password" placeholder="输入密码" required autocomplete="current-password" autofocus>
             </div>
             <button type="submit" class="login-btn" id="loginBtn">
                 <span class="btn-text">登 录</span>
@@ -257,7 +253,6 @@
             e.preventDefault();
             const btn = document.getElementById('loginBtn');
             const errorMsg = document.getElementById('errorMsg');
-            const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
 
             errorMsg.classList.remove('visible');
@@ -268,7 +263,7 @@
                 const res = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password }),
+                    body: JSON.stringify({ password }),
                 });
 
                 const data = await res.json();
@@ -290,7 +285,7 @@
 
         // If already logged in, redirect
         fetch('/api/me').then(r => r.json()).then(data => {
-            if (data.username && data.username !== 'anonymous' && !data.error) {
+            if (data.authenticated && !data.error) {
                 window.location.href = '/';
             }
         }).catch(() => {});

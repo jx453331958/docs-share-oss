@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { readdir, readFile, stat, writeFile, unlink, access } from 'fs/promises';
+import { readdir, readFile, stat, writeFile, unlink } from 'fs/promises';
 import { join, extname, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
@@ -19,7 +19,6 @@ function generateApiKey() {
 const PORT = process.env.PORT || 3457;
 const DOCS_DIR = join(__dirname, 'docs');
 const PUBLIC_DIR = join(__dirname, 'public');
-const USERS_FILE = join(__dirname, 'users.json');
 const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || __dirname;
@@ -29,81 +28,24 @@ const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';
 const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 天
 
-// 用户数据（从文件加载或从环境变量初始化）
-let AUTH_USERS = new Map();
-let ADMIN_USER = null;
+// 从旧 AUTH_USERS 环境变量提取密码（兼容迁移）
+function extractPasswordFallback(authUsersStr) {
+  if (!authUsersStr) return null;
+  const first = authUsersStr.split(',')[0];
+  const parts = first.split(':');
+  return parts.length >= 2 ? parts.slice(1).join(':').trim() : null;
+}
+
+// 单密码鉴权
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD
+  || extractPasswordFallback(process.env.AUTH_USERS)
+  || 'admin';
 
 // Session 管理（内存 Map）
-const SESSIONS = new Map(); // token → { username, role, createdAt }
+const SESSIONS = new Map(); // token → { createdAt }
 
 // 首次启动时保存生成的 API Key
 const isFirstRun = !process.env.API_KEY;
-
-// 加载用户数据
-async function loadUsers() {
-  try {
-    await access(USERS_FILE);
-    const data = await readFile(USERS_FILE, 'utf-8');
-    const users = JSON.parse(data);
-    AUTH_USERS = new Map();
-    for (const [username, info] of Object.entries(users)) {
-      AUTH_USERS.set(username, info);
-      if (info.role === 'admin') {
-        ADMIN_USER = username;
-      }
-    }
-    console.log(`[Auth] Loaded ${AUTH_USERS.size} users from ${USERS_FILE}`);
-  } catch {
-    // 文件不存在，从环境变量初始化
-    AUTH_USERS = parseAuthUsers(process.env.AUTH_USERS);
-    // 保存到文件
-    await saveUsers();
-  }
-}
-
-// 保存用户数据
-async function saveUsers() {
-  const usersObj = {};
-  for (const [username, info] of AUTH_USERS) {
-    usersObj[username] = info;
-  }
-  await writeFile(USERS_FILE, JSON.stringify(usersObj, null, 2), 'utf-8');
-  console.log(`[Auth] Saved ${AUTH_USERS.size} users to ${USERS_FILE}`);
-}
-
-// 解析用户列表：格式 "user1:pass1,user2:pass2"
-// 兼容旧格式（仅密码）和新格式（带角色信息）
-function parseAuthUsers(usersStr) {
-  if (!usersStr) {
-    const defaultUsers = new Map();
-    defaultUsers.set('admin', { password: 'admin', role: 'admin' });
-    ADMIN_USER = 'admin';
-    return defaultUsers;
-  }
-
-  const users = new Map();
-  const pairs = usersStr.split(',');
-
-  pairs.forEach((pair, index) => {
-    const [user, pass] = pair.split(':');
-    if (user && pass) {
-      const username = user.trim();
-      // 第一个用户是管理员
-      const role = index === 0 ? 'admin' : 'user';
-      users.set(username, { password: pass.trim(), role });
-      if (role === 'admin') {
-        ADMIN_USER = username;
-      }
-    }
-  });
-
-  if (users.size === 0) {
-    users.set('admin', { password: 'admin', role: 'admin' });
-    ADMIN_USER = 'admin';
-  }
-
-  return users;
-}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -136,9 +78,9 @@ function parseCookies(req) {
 }
 
 // ── Session 创建 ──
-function createSession(username, role) {
+function createSession() {
   const token = randomBytes(32).toString('hex');
-  SESSIONS.set(token, { username, role, createdAt: Date.now() });
+  SESSIONS.set(token, { createdAt: Date.now() });
   return token;
 }
 
@@ -152,12 +94,12 @@ function cleanExpiredSessions() {
   }
 }
 
-// ── Session 鉴权（替代 Basic Auth）──
+// ── Session 鉴权 ──
 // 优先 Cookie session，兼容 Basic Auth（API 向后兼容）
-// 返回用户信息对象或 null
+// 返回 { authenticated: true } 或 null
 // options.redirect: 未登录时是否 302 重定向（默认 true，API 调用设为 false）
 function requireSession(req, res, options = {}) {
-  if (!ENABLE_AUTH) return { username: 'anonymous', role: 'user' };
+  if (!ENABLE_AUTH) return { authenticated: true };
 
   const { redirect = true } = options;
 
@@ -166,13 +108,7 @@ function requireSession(req, res, options = {}) {
   if (cookies.session) {
     const session = SESSIONS.get(cookies.session);
     if (session && (Date.now() - session.createdAt < SESSION_MAX_AGE)) {
-      // 确保用户仍然存在
-      const userInfo = AUTH_USERS.get(session.username);
-      if (userInfo) {
-        return { username: session.username, role: userInfo.role };
-      }
-      // 用户已被删除，清除 session
-      SESSIONS.delete(cookies.session);
+      return { authenticated: true };
     }
   }
 
@@ -182,10 +118,11 @@ function requireSession(req, res, options = {}) {
     try {
       const base64Credentials = authHeader.split(' ')[1];
       const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
-      const [username, password] = credentials.split(':');
-      const userInfo = AUTH_USERS.get(username);
-      if (userInfo && userInfo.password === password) {
-        return { username, role: userInfo.role };
+      // 只验证密码部分（忽略用户名）
+      const colonIndex = credentials.indexOf(':');
+      const password = colonIndex >= 0 ? credentials.slice(colonIndex + 1) : credentials;
+      if (password === AUTH_PASSWORD) {
+        return { authenticated: true };
       }
     } catch {
       // Basic Auth 解析失败，继续到未认证处理
@@ -479,119 +416,30 @@ async function handleWebhook(req, res) {
   }
 }
 
-// ── GET /api/users - 获取用户列表（仅管理员）──
-async function handleGetUsers(req, res) {
-  const user = requireSession(req, res, { redirect: false });
-  if (!user) return;
-
-  if (user.role !== 'admin') {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Forbidden: Admin access required' }));
-    return;
-  }
-
-  const users = [];
-  for (const [username, info] of AUTH_USERS) {
-    users.push({ username, role: info.role });
-  }
-
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(users));
-}
-
-// ── POST /api/users - 添加用户（仅管理员）──
-async function handleAddUser(req, res) {
-  const user = requireSession(req, res, { redirect: false });
-  if (!user) return;
-
-  if (user.role !== 'admin') {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Forbidden: Admin access required' }));
-    return;
-  }
-
-  try {
-    const body = await parseBody(req);
-    const { username, password } = body;
-
-    if (!username || !password) {
-      throw new Error('Username and password are required');
-    }
-
-    if (AUTH_USERS.has(username)) {
-      throw new Error('User already exists');
-    }
-
-    AUTH_USERS.set(username, { password, role: 'user' });
-    await saveUsers();
-
-    console.log(`[Auth] User added: ${username}`);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, message: 'User added successfully' }));
-  } catch (error) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: error.message }));
-  }
-}
-
-// ── DELETE /api/users/:username - 删除用户（仅管理员）──
-async function handleDeleteUser(req, res, username) {
-  const user = requireSession(req, res, { redirect: false });
-  if (!user) return;
-
-  if (user.role !== 'admin') {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Forbidden: Admin access required' }));
-    return;
-  }
-
-  try {
-    if (!AUTH_USERS.has(username)) {
-      throw new Error('User not found');
-    }
-
-    const userInfo = AUTH_USERS.get(username);
-    if (userInfo.role === 'admin') {
-      throw new Error('Cannot delete admin user');
-    }
-
-    AUTH_USERS.delete(username);
-    await saveUsers();
-
-    console.log(`[Auth] User deleted: ${username}`);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, message: 'User deleted successfully' }));
-  } catch (error) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: error.message }));
-  }
-}
-
 // ── POST /api/login ──
 async function handleLogin(req, res) {
   try {
     const body = await parseBody(req);
-    const { username, password } = body;
+    const { password } = body;
 
-    if (!username || !password) {
+    if (!password) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: '用户名和密码不能为空' }));
+      res.end(JSON.stringify({ error: '密码不能为空' }));
       return;
     }
 
-    const userInfo = AUTH_USERS.get(username);
-    if (!userInfo || userInfo.password !== password) {
+    if (password !== AUTH_PASSWORD) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: '用户名或密码错误' }));
+      res.end(JSON.stringify({ error: '密码错误' }));
       return;
     }
 
-    const token = createSession(username, userInfo.role);
+    const token = createSession();
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Set-Cookie': `session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAX_AGE / 1000}`,
     });
-    res.end(JSON.stringify({ success: true, username, role: userInfo.role }));
+    res.end(JSON.stringify({ success: true }));
   } catch (error) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: error.message }));
@@ -615,7 +463,7 @@ function handleLogout(req, res) {
 function handleMe(req, res) {
   if (!ENABLE_AUTH) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ username: 'anonymous', role: 'user', authEnabled: false }));
+    res.end(JSON.stringify({ authenticated: true, authEnabled: false }));
     return;
   }
 
@@ -623,57 +471,7 @@ function handleMe(req, res) {
   if (!user) return;
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ username: user.username, role: user.role, authEnabled: true }));
-}
-
-// ── PUT /api/users/:username/password ──
-async function handleChangePassword(req, res, targetUsername) {
-  const user = requireSession(req, res, { redirect: false });
-  if (!user) return;
-
-  try {
-    const body = await parseBody(req);
-    const { oldPassword, newPassword } = body;
-
-    if (!newPassword) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: '新密码不能为空' }));
-      return;
-    }
-
-    if (!AUTH_USERS.has(targetUsername)) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: '用户不存在' }));
-      return;
-    }
-
-    // 管理员可修改任意用户密码；普通用户只能改自己的，且需验证旧密码
-    if (user.role !== 'admin') {
-      if (user.username !== targetUsername) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: '无权修改其他用户的密码' }));
-        return;
-      }
-      const userInfo = AUTH_USERS.get(targetUsername);
-      if (!oldPassword || userInfo.password !== oldPassword) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: '旧密码错误' }));
-        return;
-      }
-    }
-
-    const targetInfo = AUTH_USERS.get(targetUsername);
-    targetInfo.password = newPassword;
-    AUTH_USERS.set(targetUsername, targetInfo);
-    await saveUsers();
-
-    console.log(`[Auth] Password changed for: ${targetUsername} (by ${user.username})`);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, message: '密码修改成功' }));
-  } catch (error) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: error.message }));
-  }
+  res.end(JSON.stringify({ authenticated: true, authEnabled: true }));
 }
 
 async function serveStatic(req, res) {
@@ -699,7 +497,7 @@ async function serveStatic(req, res) {
   if (!user) return;
 
   // Web UI 静态文件从 public/ 目录提供，文档从 docs/ 目录提供
-  const isPublicFile = pathname === '/index.html' || pathname === '/users.html';
+  const isPublicFile = pathname === '/index.html';
   const baseDir = isPublicFile ? PUBLIC_DIR : DOCS_DIR;
   const filepath = join(baseDir, pathname);
 
@@ -763,26 +561,6 @@ const server = createServer(async (req, res) => {
     return handleWebhook(req, res);
   }
 
-  // User management API
-  if (pathname === '/api/users' && req.method === 'GET') {
-    return handleGetUsers(req, res);
-  }
-
-  if (pathname === '/api/users' && req.method === 'POST') {
-    return handleAddUser(req, res);
-  }
-
-  if (pathname.startsWith('/api/users/') && pathname.endsWith('/password') && req.method === 'PUT') {
-    const parts = pathname.replace('/api/users/', '').replace('/password', '');
-    const username = decodeURIComponent(parts);
-    return handleChangePassword(req, res, username);
-  }
-
-  if (pathname.startsWith('/api/users/') && req.method === 'DELETE') {
-    const username = decodeURIComponent(pathname.replace('/api/users/', ''));
-    return handleDeleteUser(req, res, username);
-  }
-
   // Auth API
   if (pathname === '/api/login' && req.method === 'POST') {
     return handleLogin(req, res);
@@ -804,9 +582,11 @@ const server = createServer(async (req, res) => {
 setInterval(cleanExpiredSessions, 60 * 60 * 1000);
 
 server.listen(PORT, '0.0.0.0', async () => {
-  // 加载用户数据
-  if (ENABLE_AUTH) {
-    await loadUsers();
+  // 迁移警告：旧 AUTH_USERS 环境变量
+  if (ENABLE_AUTH && process.env.AUTH_USERS && !process.env.AUTH_PASSWORD) {
+    console.warn(`\n⚠️  [Migration] AUTH_USERS is deprecated. Please switch to AUTH_PASSWORD.`);
+    console.warn(`   Current password extracted from AUTH_USERS: ${AUTH_PASSWORD}`);
+    console.warn(`   Update your config: AUTH_PASSWORD=${AUTH_PASSWORD}\n`);
   }
 
   console.log(`\n📚 Docs Share Server`);
@@ -840,7 +620,7 @@ ENABLE_WEBHOOK=false
   }
 
   console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}${ENABLE_WEBHOOK ? ` (Secret: ${WEBHOOK_SECRET ? '✓ Configured' : '⚠ Not set, verification disabled'})` : ''}`);
-  console.log(`🔒 Auth:      ${ENABLE_AUTH ? `✓ Enabled (${AUTH_USERS.size} user${AUTH_USERS.size > 1 ? 's' : ''})` : '✗ Disabled (Public access)'}`);
+  console.log(`🔒 Auth:      ${ENABLE_AUTH ? '✓ Enabled (Password protected)' : '✗ Disabled (Public access)'}`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
   console.log(`API Endpoints:`);
   console.log(`  GET    /api/docs          - List all documents`);
@@ -853,10 +633,6 @@ ENABLE_WEBHOOK=false
     console.log(`  POST   /api/login         - Login`);
     console.log(`  POST   /api/logout        - Logout`);
     console.log(`  GET    /api/me            - Current user info`);
-    console.log(`  GET    /api/users         - List users (admin only)`);
-    console.log(`  POST   /api/users         - Add user (admin only)`);
-    console.log(`  DELETE /api/users/:user   - Delete user (admin only)`);
-    console.log(`  PUT    /api/users/:user/password - Change password`);
   }
   console.log();
 });

@@ -326,15 +326,11 @@ services:
       - "$PORT:3457"
     volumes:
       - ./docs:/app/docs
-      - ./users.json:/app/users.json
     environment:
       - API_KEY=$API_KEY
       - ENABLE_WEBHOOK=false
     restart: unless-stopped
 EOF
-
-    # 确保 users.json 文件存在（避免 Docker 将其挂载为目录）
-    touch "$DATA_DIR/users.json"
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🔑 API Key (已自动生成，请保存):"
@@ -476,8 +472,7 @@ configure_auth_docker() {
     echo ""
     echo "功能说明："
     echo "  - 默认启用访问鉴权，保护私有文档"
-    echo "  - 访问文档站需要输入用户名和密码"
-    echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
+    echo "  - 访问文档站需要输入密码"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
     read -p "是否启用鉴权？[y/n, 默认 y] " enable_auth < /dev/tty
@@ -489,17 +484,11 @@ configure_auth_docker() {
     fi
 
     echo ""
-    info "配置管理员账号"
-    echo "  - 管理员可以通过 Web 界面添加更多用户"
-    echo "  - 其他用户登录后只能查看文档"
+    info "设置访问密码"
     echo ""
 
-    # 管理员账号配置
-    read -p "管理员用户名 [默认: admin]: " auth_user < /dev/tty
-    auth_user=${auth_user:-admin}
-
     # 密码输入（不回显）
-    read -sp "管理员密码: " auth_pass < /dev/tty
+    read -sp "访问密码: " auth_pass < /dev/tty
     echo ""
 
     if [ -z "$auth_pass" ]; then
@@ -515,24 +504,17 @@ configure_auth_docker() {
     # 使用 sed 在 ENABLE_WEBHOOK=false 后添加
     sed -i.tmp "/ENABLE_WEBHOOK=false/a\\
       - ENABLE_AUTH=true\\
-      - AUTH_USERS=$auth_user:$auth_pass" "$DATA_DIR/docker-compose.yml"
+      - AUTH_PASSWORD=$auth_pass" "$DATA_DIR/docker-compose.yml"
     rm -f "$DATA_DIR/docker-compose.yml.tmp"
 
     success "鉴权配置完成"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🔒 管理员凭证"
+    echo "🔒 访问密码"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "   用户名: $auth_user"
-    echo "   密码:   $auth_pass"
-    echo "   权限:   管理员（可添加其他用户）"
+    echo "   密码: $auth_pass"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    warning "请妥善保管管理员凭证"
-    echo ""
-    info "添加更多用户:"
-    echo "  1. 使用管理员账号登录文档站"
-    echo "  2. 访问用户管理页面 (点击侧边栏用户图标)"
-    echo "  3. 在 Web 界面中添加新用户"
+    warning "请妥善保管访问密码"
     echo ""
 }
 
@@ -694,7 +676,7 @@ configure_webhook_docker() {
     local CONFIGURED_API_KEY=$(grep "API_KEY=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*API_KEY=//' | tr -d ' "' | tr -d '-')
     # 保留鉴权配置
     local CONFIGURED_ENABLE_AUTH=$(grep "ENABLE_AUTH=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*ENABLE_AUTH=//' | tr -d ' "')
-    local CONFIGURED_AUTH_USERS=$(grep "AUTH_USERS=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*AUTH_USERS=//' | tr -d ' "')
+    local CONFIGURED_AUTH_PASSWORD=$(grep "AUTH_PASSWORD=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*AUTH_PASSWORD=//' | tr -d ' "')
 
     # 验证提取的配置
     if [ -z "$CONFIGURED_PORT" ]; then
@@ -722,7 +704,6 @@ services:
       - "$CONFIGURED_PORT:3457"
     volumes:
       - $ACTUAL_DOCS_DIR:/app/docs
-      - ./users.json:/app/users.json
 EOF
 
     # 如果是私有仓库，需要挂载 SSH 密钥
@@ -746,9 +727,9 @@ EOF
       - ENABLE_AUTH=$CONFIGURED_ENABLE_AUTH
 EOF
     fi
-    if [ -n "$CONFIGURED_AUTH_USERS" ]; then
+    if [ -n "$CONFIGURED_AUTH_PASSWORD" ]; then
         cat >> "$DATA_DIR/docker-compose.yml" << EOF
-      - AUTH_USERS=$CONFIGURED_AUTH_USERS
+      - AUTH_PASSWORD=$CONFIGURED_AUTH_PASSWORD
 EOF
     fi
 
@@ -1180,8 +1161,7 @@ configure_auth() {
     echo ""
     echo "功能说明："
     echo "  - 默认启用访问鉴权，保护私有文档"
-    echo "  - 访问文档站需要输入用户名和密码"
-    echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
+    echo "  - 访问文档站需要输入密码"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
     read -p "是否启用鉴权？[y/n, 默认 y] " enable_auth < /dev/tty
@@ -1198,17 +1178,11 @@ EOF
     fi
 
     echo ""
-    info "配置管理员账号"
-    echo "  - 管理员可以通过 Web 界面添加更多用户"
-    echo "  - 其他用户登录后只能查看文档"
+    info "设置访问密码"
     echo ""
 
-    # 管理员账号配置
-    read -p "管理员用户名 [默认: admin]: " auth_user < /dev/tty
-    auth_user=${auth_user:-admin}
-
     # 密码输入（不回显）
-    read -sp "管理员密码: " auth_pass < /dev/tty
+    read -sp "访问密码: " auth_pass < /dev/tty
     echo ""
 
     if [ -z "$auth_pass" ]; then
@@ -1221,23 +1195,17 @@ EOF
 
 # 访问鉴权配置
 ENABLE_AUTH=true
-AUTH_USERS=$auth_user:$auth_pass
+AUTH_PASSWORD=$auth_pass
 EOF
 
     success "鉴权配置完成"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🔒 管理员凭证"
+    echo "🔒 访问密码"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "   用户名: $auth_user"
-    echo "   密码:   $auth_pass"
-    echo "   权限:   管理员（可添加其他用户）"
+    echo "   密码: $auth_pass"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    warning "请妥善保管管理员凭证"
-    echo ""
-    info "添加更多用户:"
-    echo "  1. 使用管理员账号登录文档站"
-    echo "  2. 在 Web 界面的用户管理中添加"
+    warning "请妥善保管访问密码"
     echo ""
 }
 
@@ -1528,8 +1496,6 @@ start_service() {
 
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
         cd "$DATA_DIR"
-        # 确保 users.json 文件存在（避免 Docker 将其挂载为目录）
-        touch "$DATA_DIR/users.json"
         docker compose up -d
         sleep 2
     elif command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then
