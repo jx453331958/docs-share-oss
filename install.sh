@@ -326,11 +326,15 @@ services:
       - "$PORT:3457"
     volumes:
       - ./docs:/app/docs
+      - ./users.json:/app/users.json
     environment:
       - API_KEY=$API_KEY
       - ENABLE_WEBHOOK=false
     restart: unless-stopped
 EOF
+
+    # 确保 users.json 文件存在（避免 Docker 将其挂载为目录）
+    touch "$DATA_DIR/users.json"
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🔑 API Key (已自动生成，请保存):"
@@ -718,6 +722,7 @@ services:
       - "$CONFIGURED_PORT:3457"
     volumes:
       - $ACTUAL_DOCS_DIR:/app/docs
+      - ./users.json:/app/users.json
 EOF
 
     # 如果是私有仓库，需要挂载 SSH 密钥
@@ -1523,6 +1528,8 @@ start_service() {
 
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
         cd "$DATA_DIR"
+        # 确保 users.json 文件存在（避免 Docker 将其挂载为目录）
+        touch "$DATA_DIR/users.json"
         docker compose up -d
         sleep 2
     elif command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then

@@ -6,4 +6,5 @@ services:
       - "3457:3457"
     volumes:
       - ./docs:/app/docs
+      - ./users.json:/app/users.json
     restart: unless-stopped
