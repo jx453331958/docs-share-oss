@@ -559,8 +559,29 @@ configure_webhook_docker() {
     read -p "这是私有仓库吗？[y/n, 默认 n] " is_private < /dev/tty
     is_private=${is_private:-n}
 
-    # 文档仓库路径
-    DOCS_REPO_PATH="$HOME/${REPO##*/}"
+    # 询问文档仓库克隆位置
+    echo ""
+    info "请选择文档仓库克隆位置："
+    echo "  1) 数据目录内（跟随安装目录）: $DATA_DIR/repo"
+    echo "  2) 独立目录: $HOME/${REPO##*/}"
+    echo "  3) 自定义路径"
+    read -p "请选择 [1-3, 默认 1]: " repo_location < /dev/tty
+
+    case ${repo_location:-1} in
+        1)
+            DOCS_REPO_PATH="$DATA_DIR/repo"
+            ;;
+        2)
+            DOCS_REPO_PATH="$HOME/${REPO##*/}"
+            ;;
+        3)
+            read -p "请输入仓库克隆路径 [默认: $DATA_DIR/repo]: " custom_repo_path < /dev/tty
+            DOCS_REPO_PATH="${custom_repo_path:-$DATA_DIR/repo}"
+            ;;
+        *)
+            DOCS_REPO_PATH="$DATA_DIR/repo"
+            ;;
+    esac
 
     # 询问文档在仓库中的位置
     echo ""
