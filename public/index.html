@@ -298,18 +298,59 @@
         }
         .doc-item.active .doc-item-title { color: var(--text-bright); }
 
+        .doc-item-meta {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            opacity: 0.65;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ── Sort Bar ── */
+        .sort-bar {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+        .sort-btn {
+            flex: 1;
+            padding: 4px 0;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .sort-btn:hover {
+            border-color: var(--border-active);
+            color: var(--text);
+            background: var(--bg-hover);
+        }
+        .sort-btn.active {
+            background: var(--accent-glow);
+            border-color: rgba(99, 140, 255, 0.3);
+            color: var(--accent);
+        }
+        .sort-arrow { font-size: 10px; }
+
         /* ── Drag and Drop ── */
-        .doc-item[draggable="true"] {
-            cursor: grab;
-        }
-        .doc-item.dragging {
-            opacity: 0.4;
-        }
-        .doc-item.drag-over-top {
-            box-shadow: 0 -2px 0 0 var(--accent);
-        }
-        .doc-item.drag-over-bottom {
-            box-shadow: 0 2px 0 0 var(--accent);
+        .doc-item[draggable="true"] { cursor: grab; }
+        .doc-item.dragging { opacity: 0.4; }
+        .doc-item.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
+        .doc-item.drag-over-bottom { box-shadow: 0 2px 0 0 var(--accent); }
+
+        /* ── Lazy Load Sentinel ── */
+        .load-sentinel {
+            padding: 12px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            opacity: 0.5;
         }
 
         /* ── Content ── */
@@ -628,7 +669,14 @@
                 </div>
             </div>
 
+            <div class="sort-bar">
+                <button class="sort-btn active" data-sort="time">时间 <span class="sort-arrow">↓</span></button>
+                <button class="sort-btn" data-sort="title">标题 <span class="sort-arrow">↑</span></button>
+                <button class="sort-btn" data-sort="custom">自定义</button>
+            </div>
+
             <ul class="doc-list" id="docList"></ul>
+            <div id="loadSentinel" class="load-sentinel" style="display:none;">加载更多...</div>
         </div>
 
         <div class="sidebar-toggle-wrap" id="sidebarToggleWrap">
@@ -649,12 +697,19 @@
     </div>
 
     <script>
+        // ── State ──
         let docConfig = [];
-        let filteredDocs = [];
+        let sortedDocs = [];
         const docs = {};
         let currentDoc = null;
         let searchQuery = '';
+        let currentSort = localStorage.getItem('docs-sort-mode') || 'time-desc';
+        let displayedCount = 0;
+        const PAGE_SIZE = 50;
+        let lazyObserver = null;
+        let dragSrcEl = null;
 
+        // ── Sidebar ──
         function toggleSidebarDesktop() {
             const sidebar = document.getElementById('sidebar');
             const wrap = document.getElementById('sidebarToggleWrap');
@@ -678,6 +733,7 @@
             }
         }
 
+        // ── Markdown Rendering ──
         async function loadMarkdown(filename, path) {
             if (!docs[filename]) {
                 const response = await fetch(`${path}${filename}`);
@@ -696,14 +752,14 @@
                 const markdown = await loadMarkdown(filename, path);
                 container.innerHTML = marked.parse(markdown);
                 container.style.animation = 'none';
-                container.offsetHeight; // reflow
+                container.offsetHeight;
                 container.style.animation = '';
                 currentDoc = { file: filename, path: path };
                 downloadBtn.classList.add('visible');
                 closeSidebarOnMobile();
                 document.querySelector('.content').scrollTo({ top: 0, behavior: 'smooth' });
             } catch (error) {
-                container.innerHTML = `<p style="color: #f47067;">❌ ${error.message}</p>`;
+                container.innerHTML = `<p style="color: #f47067;">${error.message}</p>`;
                 currentDoc = null;
             }
         }
@@ -721,18 +777,113 @@
             URL.revokeObjectURL(url);
         }
 
+        // ── Time Formatting ──
+        function formatTime(mtimeMs) {
+            if (!mtimeMs) return '';
+            const now = Date.now();
+            const diff = now - mtimeMs;
+            const mins = Math.floor(diff / 60000);
+            const hours = Math.floor(mins / 60);
+            const days = Math.floor(hours / 24);
+            if (mins < 1) return '刚刚';
+            if (mins < 60) return `${mins} 分钟前`;
+            if (hours < 24) return `${hours} 小时前`;
+            if (days < 30) return `${days} 天前`;
+            const d = new Date(mtimeMs);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return y === new Date().getFullYear() ? `${m}-${dd}` : `${y}-${m}-${dd}`;
+        }
+
+        // ── Sort Logic ──
+        function getCustomOrder() {
+            try { return JSON.parse(localStorage.getItem('docs-custom-order') || '[]'); }
+            catch { return []; }
+        }
+
+        function saveCustomOrder(order) {
+            localStorage.setItem('docs-custom-order', JSON.stringify(order));
+        }
+
+        function sortDocs(arr) {
+            const sorted = [...arr];
+            switch (currentSort) {
+                case 'time-desc': sorted.sort((a, b) => b.mtime - a.mtime); break;
+                case 'time-asc': sorted.sort((a, b) => a.mtime - b.mtime); break;
+                case 'title-asc': sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN')); break;
+                case 'title-desc': sorted.sort((a, b) => b.title.localeCompare(a.title, 'zh-CN')); break;
+                case 'custom': {
+                    const order = getCustomOrder();
+                    if (order.length) {
+                        const m = new Map(order.map((f, i) => [f, i]));
+                        sorted.sort((a, b) => {
+                            const ai = m.has(a.file) ? m.get(a.file) : 9999999;
+                            const bi = m.has(b.file) ? m.get(b.file) : 9999999;
+                            return ai === bi ? b.mtime - a.mtime : ai - bi;
+                        });
+                    }
+                    break;
+                }
+            }
+            return sorted;
+        }
+
+        // ── Sort UI ──
+        function initSortBar() {
+            document.querySelectorAll('.sort-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const s = btn.dataset.sort;
+                    if (s === 'time') {
+                        currentSort = currentSort === 'time-desc' ? 'time-asc' : 'time-desc';
+                    } else if (s === 'title') {
+                        currentSort = currentSort === 'title-asc' ? 'title-desc' : 'title-asc';
+                    } else {
+                        currentSort = 'custom';
+                        if (!getCustomOrder().length) {
+                            saveCustomOrder(sortedDocs.map(d => d.file));
+                        }
+                    }
+                    localStorage.setItem('docs-sort-mode', currentSort);
+                    updateSortButtons();
+                    applySortAndRender();
+                });
+            });
+            updateSortButtons();
+        }
+
+        function updateSortButtons() {
+            document.querySelectorAll('.sort-btn').forEach(btn => {
+                const s = btn.dataset.sort;
+                let active = false;
+                if (s === 'time') {
+                    active = currentSort.startsWith('time');
+                    const arrow = btn.querySelector('.sort-arrow');
+                    if (arrow) arrow.textContent = currentSort === 'time-asc' ? '↑' : '↓';
+                } else if (s === 'title') {
+                    active = currentSort.startsWith('title');
+                    const arrow = btn.querySelector('.sort-arrow');
+                    if (arrow) arrow.textContent = currentSort === 'title-desc' ? '↓' : '↑';
+                } else {
+                    active = currentSort === 'custom';
+                }
+                btn.classList.toggle('active', active);
+            });
+        }
+
+        function applySortAndRender() {
+            const source = searchQuery
+                ? docConfig.filter(d => d.title.toLowerCase().includes(searchQuery) || d.file.toLowerCase().includes(searchQuery))
+                : docConfig;
+            sortedDocs = sortDocs(source);
+            displayedCount = 0;
+            renderDocList();
+        }
+
         // ── Search ──
         function filterDocs(query) {
             searchQuery = query.toLowerCase().trim();
-            if (!searchQuery) {
-                filteredDocs = [...docConfig];
-            } else {
-                filteredDocs = docConfig.filter(doc =>
-                    doc.title.toLowerCase().includes(searchQuery) ||
-                    doc.file.toLowerCase().includes(searchQuery)
-                );
-            }
-            updateDocList();
+            applySortAndRender();
         }
 
         function clearSearch() {
@@ -742,11 +893,11 @@
         }
 
         function updateDocCount() {
-            const count = document.getElementById('docCount');
+            const el = document.getElementById('docCount');
             if (searchQuery) {
-                count.textContent = `${filteredDocs.length}/${docConfig.length}`;
+                el.textContent = `${sortedDocs.length}/${docConfig.length}`;
             } else {
-                count.textContent = docConfig.length;
+                el.textContent = docConfig.length;
             }
         }
 
@@ -754,13 +905,11 @@
         async function refreshDocs() {
             const btn = document.getElementById('refreshBtn');
             btn.classList.add('loading');
-
             try {
                 const res = await fetch('/api/docs?t=' + Date.now());
                 const list = await res.json();
-                docConfig = list.map(d => ({ file: d.file, title: d.title, path: './' }));
-                filterDocs(searchQuery);
-                console.log('✓ Refreshed docs list');
+                docConfig = list.map(d => ({ file: d.file, title: d.title, mtime: d.mtime, path: './' }));
+                applySortAndRender();
             } catch (e) {
                 console.error('Failed to refresh:', e);
             } finally {
@@ -768,27 +917,40 @@
             }
         }
 
-        let dragSrcEl = null;
-
-        function updateDocList() {
+        // ── Lazy Doc List Rendering ──
+        function renderDocList() {
             const docList = document.getElementById('docList');
             docList.innerHTML = '';
+            displayedCount = 0;
 
-            if (filteredDocs.length === 0) {
+            if (sortedDocs.length === 0) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;';
                 empty.textContent = searchQuery ? '未找到匹配的文档' : '暂无文档';
                 docList.appendChild(empty);
                 updateDocCount();
+                document.getElementById('loadSentinel').style.display = 'none';
                 return;
             }
 
-            const canDrag = !searchQuery; // 搜索时禁用拖拽
+            loadMoreDocs();
+            updateDocCount();
+            setupLazyLoad();
+        }
 
-            filteredDocs.forEach((doc, i) => {
+        function loadMoreDocs() {
+            const docList = document.getElementById('docList');
+            const end = Math.min(displayedCount + PAGE_SIZE, sortedDocs.length);
+            const canDrag = !searchQuery && currentSort === 'custom';
+
+            for (let i = displayedCount; i < end; i++) {
+                const doc = sortedDocs[i];
                 const li = document.createElement('li');
-                li.className = `doc-item${i === 0 && !currentDoc ? ' active' : ''}`;
+                li.className = 'doc-item';
                 li.dataset.file = doc.file;
+
+                if (i === 0 && !currentDoc) li.classList.add('active');
+                if (currentDoc && currentDoc.file === doc.file) li.classList.add('active');
 
                 if (canDrag) {
                     li.draggable = true;
@@ -799,26 +961,39 @@
                     li.addEventListener('dragend', handleDragEnd);
                 }
 
-                // Highlight search query
                 let titleHtml = doc.title;
                 if (searchQuery) {
                     const regex = new RegExp(`(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-                    titleHtml = titleHtml.replace(regex, '<mark style="background: var(--accent-glow); color: var(--accent);">$1</mark>');
+                    titleHtml = titleHtml.replace(regex, '<mark style="background:var(--accent-glow);color:var(--accent)">$1</mark>');
                 }
 
-                li.innerHTML = `<div class="doc-item-title">${titleHtml}</div>`;
+                li.innerHTML = `<div class="doc-item-title">${titleHtml}</div><div class="doc-item-meta">${formatTime(doc.mtime)}</div>`;
                 li.onclick = () => {
                     document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('active'));
                     li.classList.add('active');
                     renderDoc(doc.file, doc.path);
                 };
                 docList.appendChild(li);
-            });
+            }
 
-            updateDocCount();
+            displayedCount = end;
+            document.getElementById('loadSentinel').style.display =
+                displayedCount >= sortedDocs.length ? 'none' : '';
         }
 
-        // ── Drag and Drop ──
+        function setupLazyLoad() {
+            if (lazyObserver) lazyObserver.disconnect();
+            const sentinel = document.getElementById('loadSentinel');
+            sentinel.style.display = displayedCount >= sortedDocs.length ? 'none' : '';
+            lazyObserver = new IntersectionObserver(entries => {
+                if (entries[0].isIntersecting && displayedCount < sortedDocs.length) {
+                    loadMoreDocs();
+                }
+            }, { root: document.getElementById('sidebar'), threshold: 0.1 });
+            lazyObserver.observe(sentinel);
+        }
+
+        // ── Drag and Drop (custom sort mode only) ──
         function handleDragStart(e) {
             dragSrcEl = this;
             this.classList.add('dragging');
@@ -830,19 +1005,9 @@
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
             if (this === dragSrcEl) return;
-
-            // 清除其他元素的指示线
-            document.querySelectorAll('.doc-item').forEach(el => {
-                el.classList.remove('drag-over-top', 'drag-over-bottom');
-            });
-
+            document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('drag-over-top', 'drag-over-bottom'));
             const rect = this.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            if (e.clientY < midY) {
-                this.classList.add('drag-over-top');
-            } else {
-                this.classList.add('drag-over-bottom');
-            }
+            this.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-over-top' : 'drag-over-bottom');
         }
 
         function handleDragLeave() {
@@ -855,105 +1020,65 @@
 
             const dragFile = e.dataTransfer.getData('text/plain');
             const dropFile = this.dataset.file;
+            const dragIdx = sortedDocs.findIndex(d => d.file === dragFile);
+            if (dragIdx === -1) return;
 
-            const dragIdx = docConfig.findIndex(d => d.file === dragFile);
-            const dropIdx = docConfig.findIndex(d => d.file === dropFile);
-            if (dragIdx === -1 || dropIdx === -1) return;
-
-            // 从原位置移除
-            const [moved] = docConfig.splice(dragIdx, 1);
-
-            // 判断插入位置
+            const [moved] = sortedDocs.splice(dragIdx, 1);
             const rect = this.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            let newIdx = docConfig.findIndex(d => d.file === dropFile);
-            if (e.clientY >= midY) {
-                newIdx += 1;
-            }
-            docConfig.splice(newIdx, 0, moved);
+            let newIdx = sortedDocs.findIndex(d => d.file === dropFile);
+            if (e.clientY >= rect.top + rect.height / 2) newIdx++;
+            sortedDocs.splice(newIdx, 0, moved);
 
-            // 更新 filteredDocs 并重新渲染
-            filteredDocs = [...docConfig];
-            updateDocList();
+            saveCustomOrder(sortedDocs.map(d => d.file));
+            displayedCount = 0;
+            renderDocList();
 
-            // 保持当前选中状态
             if (currentDoc) {
                 document.querySelectorAll('.doc-item').forEach(el => {
                     el.classList.toggle('active', el.dataset.file === currentDoc.file);
                 });
             }
-
-            // 保存排序到服务端
-            saveDocOrder();
         }
 
         function handleDragEnd() {
             this.classList.remove('dragging');
-            document.querySelectorAll('.doc-item').forEach(el => {
-                el.classList.remove('drag-over-top', 'drag-over-bottom');
-            });
+            document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('drag-over-top', 'drag-over-bottom'));
         }
 
-        async function saveDocOrder() {
-            const order = docConfig.map(d => d.file);
-            try {
-                await fetch('/api/docs/order', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ order }),
-                });
-            } catch (e) {
-                console.error('Failed to save doc order:', e);
-            }
-        }
-
-        function initDocList() {
-            filteredDocs = [...docConfig];
-            updateDocList();
-        }
-
+        // ── Auth ──
         async function handleLogout() {
             try { await fetch('/api/logout', { method: 'POST' }); } catch {}
             window.location.href = '/login';
         }
 
+        // ── Init ──
         async function init() {
-            // Check auth status and show logout button if logged in
             try {
                 const meRes = await fetch('/api/me');
                 const me = await meRes.json();
-                if (me.authEnabled) {
-                    document.getElementById('logoutBtn').style.display = '';
-                }
+                if (me.authEnabled) document.getElementById('logoutBtn').style.display = '';
             } catch {}
 
             try {
                 const res = await fetch('/api/docs');
                 const list = await res.json();
-                docConfig = list.map(d => ({ file: d.file, title: d.title, path: './' }));
+                docConfig = list.map(d => ({ file: d.file, title: d.title, mtime: d.mtime, path: './' }));
             } catch (e) { console.error('Failed to load doc list:', e); }
 
-            initDocList();
+            initSortBar();
+            applySortAndRender();
 
-            // Search input handler
             const searchInput = document.getElementById('searchInput');
             const searchClear = document.getElementById('searchClear');
-
-            searchInput.addEventListener('input', (e) => {
-                const value = e.target.value;
-                searchClear.classList.toggle('visible', value.length > 0);
-                filterDocs(value);
+            searchInput.addEventListener('input', e => {
+                const v = e.target.value;
+                searchClear.classList.toggle('visible', v.length > 0);
+                filterDocs(v);
             });
+            searchInput.addEventListener('keydown', e => { if (e.key === 'Escape') clearSearch(); });
 
-            searchInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                    clearSearch();
-                }
-            });
-
-            // Auto-load first doc
-            if (filteredDocs.length > 0) {
-                renderDoc(filteredDocs[0].file, filteredDocs[0].path);
+            if (sortedDocs.length > 0) {
+                renderDoc(sortedDocs[0].file, sortedDocs[0].path);
             }
         }
         init();
