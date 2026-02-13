@@ -180,8 +180,33 @@ This is a sample document. Drop any `.md` files into the docs directory and they
 EOF
     fi
 
-    # 生成 API Key
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚙️  环境配置（交互式生成）"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # 1. 配置端口
+    info "1. 服务端口配置"
+    echo ""
+    read -p "服务端口 [默认: 3457]: " custom_port
+    PORT=${custom_port:-3457}
+
+    # 验证端口号
+    if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+        warning "端口号无效，使用默认值 3457"
+        PORT=3457
+    fi
+
+    success "端口: $PORT"
+    echo ""
+
+    # 2. 生成 API Key
+    info "2. API 认证密钥"
+    echo ""
     API_KEY=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)
+    success "已自动生成 API Key"
+    echo ""
 
     # 创建 docker-compose.yml
     cat > "$DATA_DIR/docker-compose.yml" << EOF
@@ -192,21 +217,16 @@ services:
     image: ghcr.io/$REPO:latest
     container_name: docs-share
     ports:
-      - "3457:3457"
+      - "$PORT:$PORT"
     volumes:
       - ./docs:/app/docs
     environment:
-      - PORT=3457
+      - PORT=$PORT
       - API_KEY=$API_KEY
       - ENABLE_WEBHOOK=false
     restart: unless-stopped
 EOF
 
-    success "Docker 配置完成！"
-    echo ""
-    info "配置文件: $DATA_DIR/docker-compose.yml"
-    info "文档目录: $DATA_DIR/docs"
-    echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🔑 API Key (已自动生成，请保存):"
     echo ""
@@ -214,14 +234,20 @@ EOF
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     warning "用于 REST API 调用，请妥善保管"
-    info "查看配置: cat $DATA_DIR/docker-compose.yml"
+    info "配置文件: $DATA_DIR/docker-compose.yml"
     echo ""
 
-    # 配置访问鉴权（Docker 模式）
+    # 3. 配置访问鉴权（Docker 模式）
+    info "3. 访问鉴权配置"
     configure_auth_docker
 
-    # 配置 Webhook（Docker 模式）
+    # 4. 配置 Webhook（Docker 模式）
+    info "4. Git Webhook 配置"
     configure_webhook_docker
+
+    echo ""
+    success "✅ 所有配置已完成！"
+    echo ""
 
     # 启动
     read -p "是否现在启动服务？[Y/n] " start_now
@@ -230,7 +256,7 @@ EOF
         docker compose up -d
         success "服务已启动！"
         echo ""
-        info "访问: http://localhost:3457"
+        info "访问: http://localhost:$PORT"
         info "查看日志: cd $DATA_DIR && docker compose logs -f"
     fi
 }
@@ -271,9 +297,17 @@ install_pm2() {
         info "请按照提示执行 sudo 命令"
     fi
 
+    # 从 .env 文件读取端口
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        PORT=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+        PORT=${PORT:-3457}
+    else
+        PORT=3457
+    fi
+
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    info "访问地址: ${GREEN}http://localhost:3457${NC}"
+    info "访问地址: ${GREEN}http://localhost:$PORT${NC}"
     info "管理命令: ${YELLOW}pm2 status${NC}"
     info "查看日志: ${YELLOW}pm2 logs docs-share${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -828,24 +862,47 @@ configure_env() {
         return
     fi
 
-    info "配置环境变量..."
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚙️  环境配置（交互式生成）"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
 
-    # 生成 API Key
+    # 1. 配置端口
+    info "1. 服务端口配置"
+    echo ""
+    read -p "服务端口 [默认: 3457]: " custom_port
+    PORT=${custom_port:-3457}
+
+    # 验证端口号
+    if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+        warning "端口号无效，使用默认值 3457"
+        PORT=3457
+    fi
+
+    success "端口: $PORT"
+    echo ""
+
+    # 2. 生成 API Key
+    info "2. API 认证密钥"
+    echo ""
     API_KEY=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)
+    success "已自动生成 API Key"
+    echo ""
 
+    # 写入基础配置
     cat > "$INSTALL_DIR/.env" << EOF
 # Docs Share 配置文件
+# 自动生成于: $(date '+%Y-%m-%d %H:%M:%S')
 
 # 服务端口
-PORT=3457
+PORT=$PORT
 
 # API 认证密钥（用于上传/删除文档）
 # 请妥善保管，不要分享给他人
 API_KEY=$API_KEY
 EOF
 
-    success "基础配置完成"
-    echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🔑 API Key (已自动生成，请保存):"
     echo ""
@@ -854,12 +911,18 @@ EOF
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     warning "用于 REST API 调用，请妥善保管"
     info "配置文件: $INSTALL_DIR/.env"
+    echo ""
 
-    # 配置访问鉴权
+    # 3. 配置访问鉴权
+    info "3. 访问鉴权配置"
     configure_auth
 
-    # 调用 Webhook 配置（包含 SSH 认证）
+    # 4. 配置 Webhook
+    info "4. Git Webhook 配置"
     configure_webhook
+
+    echo ""
+    success "✅ 所有配置已完成！"
 }
 
 # 更新

@@ -42,7 +42,7 @@ cd docs-share-oss
 
 **支持功能：**
 - ✅ 首次安装（Docker / PM2）
-- ✅ 自动配置环境和 API Key
+- ✅ **交互式配置** — 端口、API Key、访问鉴权、Webhook 全程引导，无需手动编辑配置文件
 - ✅ 自动配置 Git Webhook（含私有仓库 SSH 认证）
 - ✅ 自动更新到最新版
 - ✅ 启动/停止/重启服务
@@ -62,6 +62,41 @@ cd docs-share-oss
 ./install.sh start    # 启动服务
 ./install.sh status   # 查看状态
 ./install.sh logs     # 查看日志
+```
+
+**完整安装流程示例：**
+
+```bash
+./install.sh
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ⚙️  环境配置（交互式生成）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 1. 服务端口配置
+服务端口 [默认: 3457]: 8080  # 或直接回车使用默认
+
+# 2. API 认证密钥
+✓ 已自动生成 API Key
+
+🔑 API Key (已自动生成，请保存):
+   xxxxxxxxxxxxxxxxxxx
+
+# 3. 访问鉴权配置
+是否启用鉴权？[Y/n]  # 直接回车启用
+用户名 [默认: admin]: alice
+密码: ********
+
+🔒 登录凭证
+   用户名: alice
+   密码:   mypass123
+
+# 4. Git Webhook 配置
+是否启用 Webhook？[y/N]  # 可选
+
+✅ 所有配置已完成！
+
+# 无需手动编辑任何配置文件 ✓
 ```
 
 ---
@@ -121,6 +156,9 @@ npm run dev  # 文件变更自动重启
 
 ## ⚙️ 配置
 
+> **💡 一键脚本自动生成配置**
+> 使用 `./install.sh` 安装时，所有环境变量都通过交互式问答自动生成，**无需手动编辑配置文件**。
+
 ### 环境变量
 
 | 环境变量 | 默认值 | 说明 |
@@ -132,19 +170,37 @@ npm run dev  # 文件变更自动重启
 | `ENABLE_WEBHOOK` | `false` | 是否启用 Git webhook |
 | `GIT_REPO_PATH` | 项目目录 | Git 仓库**绝对路径**（webhook 执行 `git pull` 的目录） |
 
-创建 `.env` 文件（参考 `.env.example`）：
+**自动生成的配置示例** （安装脚本自动创建）：
 
 ```bash
-PORT=3457
-API_KEY=your-secret-api-key-here
+# Docs Share 配置文件
+# 自动生成于: 2026-02-13 10:30:00
 
-# 访问鉴权（可选）
+# 服务端口（安装时询问）
+PORT=8080
+
+# API 认证密钥（自动生成）
+API_KEY=xxxxxxxxxxxxxxxxxxx
+
+# 访问鉴权（安装时配置）
 ENABLE_AUTH=true
-AUTH_USERS=alice:pass123,bob:pass456
+AUTH_USERS=alice:mypass123
 
-# Webhook（可选）
+# Webhook（可选，安装时配置）
 ENABLE_WEBHOOK=true
-GIT_REPO_PATH=/path/to/repo
+GIT_REPO_PATH=/home/user/my-docs
+```
+
+**手动修改配置**（仅在需要时）：
+
+```bash
+# PM2 模式
+nano ~/.docs-share/.env
+pm2 restart docs-share
+
+# Docker 模式
+nano ~/docs-share-data/docker-compose.yml
+cd ~/docs-share-data && docker compose restart
 ```
 
 ### 文档格式
