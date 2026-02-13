@@ -1815,6 +1815,253 @@ uninstall() {
     success "卸载完成！"
 }
 
+# 修改访问密码（适用于已有部署）
+change_password() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔒 修改访问密码"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # 密码输入（不回显）
+    read -sp "新密码: " new_pass < /dev/tty
+    echo ""
+
+    if [ -z "$new_pass" ]; then
+        error "密码不能为空"
+        return 1
+    fi
+
+    # 确认密码
+    read -sp "确认密码: " confirm_pass < /dev/tty
+    echo ""
+
+    if [ "$new_pass" != "$confirm_pass" ]; then
+        error "两次输入的密码不一致"
+        return 1
+    fi
+
+    local configured=false
+
+    # Docker 模式
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        info "检测到 Docker 模式"
+
+        if grep -q "AUTH_PASSWORD=" "$DATA_DIR/docker-compose.yml"; then
+            sed -i.bak "s|AUTH_PASSWORD=.*|AUTH_PASSWORD=$new_pass|" "$DATA_DIR/docker-compose.yml"
+            rm -f "$DATA_DIR/docker-compose.yml.bak"
+        else
+            # 旧安装没有 AUTH_PASSWORD，追加到 environment 部分
+            sed -i.bak "/ENABLE_AUTH=/a\\
+      - AUTH_PASSWORD=$new_pass" "$DATA_DIR/docker-compose.yml"
+            rm -f "$DATA_DIR/docker-compose.yml.bak"
+        fi
+
+        configured=true
+        success "已更新 docker-compose.yml"
+    fi
+
+    # PM2 模式
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        info "检测到 PM2 模式"
+
+        if grep -q "^AUTH_PASSWORD=" "$INSTALL_DIR/.env"; then
+            sed -i.bak "s|^AUTH_PASSWORD=.*|AUTH_PASSWORD=$new_pass|" "$INSTALL_DIR/.env"
+            rm -f "$INSTALL_DIR/.env.bak"
+        else
+            echo "" >> "$INSTALL_DIR/.env"
+            echo "# 访问鉴权密码" >> "$INSTALL_DIR/.env"
+            echo "AUTH_PASSWORD=$new_pass" >> "$INSTALL_DIR/.env"
+        fi
+
+        configured=true
+        success "已更新 .env"
+    fi
+
+    if [ "$configured" = false ]; then
+        error "未检测到已有安装（找不到 docker-compose.yml 或 .env）"
+        echo ""
+        info "请先运行安装: ./install.sh install"
+        return 1
+    fi
+
+    success "密码修改成功"
+    echo ""
+
+    # 询问是否重启
+    read -p "是否现在重启服务使配置生效？[y/n, 默认 y] " restart_now < /dev/tty
+    restart_now=${restart_now:-y}
+    if [[ "$restart_now" != "n" && "$restart_now" != "N" ]]; then
+        restart_service
+    fi
+}
+
+# 修改端口（适用于已有部署）
+change_port() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔌 修改服务端口"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # 显示当前端口
+    local current_port=""
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        current_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"([0-9]+):.*/\1/')
+    elif [ -f "$INSTALL_DIR/.env" ]; then
+        current_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+    fi
+    current_port=${current_port:-3457}
+
+    info "当前端口: $current_port"
+    echo ""
+
+    local default_port=$(generate_available_port 3000 9999)
+    read -p "新端口 [默认: $default_port]: " new_port < /dev/tty
+    new_port=${new_port:-$default_port}
+
+    # 验证端口号
+    if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [ "$new_port" -lt 1 ] || [ "$new_port" -gt 65535 ]; then
+        error "端口号无效（需要 1-65535）"
+        return 1
+    fi
+
+    # 检查端口是否被占用（排除当前服务自身占用的情况）
+    if [ "$new_port" != "$current_port" ] && is_port_in_use "$new_port"; then
+        error "端口 $new_port 已被占用"
+        local suggested=$(generate_available_port 3000 9999)
+        info "建议使用: $suggested"
+        return 1
+    fi
+
+    local configured=false
+
+    # Docker 模式
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        info "检测到 Docker 模式"
+
+        # 替换端口映射 "旧端口:3457" → "新端口:3457"
+        sed -i.bak "s|\"$current_port:3457\"|\"$new_port:3457\"|" "$DATA_DIR/docker-compose.yml"
+        rm -f "$DATA_DIR/docker-compose.yml.bak"
+
+        configured=true
+        success "已更新 docker-compose.yml"
+    fi
+
+    # PM2 模式
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        info "检测到 PM2 模式"
+
+        if grep -q "^PORT=" "$INSTALL_DIR/.env"; then
+            sed -i.bak "s|^PORT=.*|PORT=$new_port|" "$INSTALL_DIR/.env"
+            rm -f "$INSTALL_DIR/.env.bak"
+        else
+            echo "" >> "$INSTALL_DIR/.env"
+            echo "# 服务端口" >> "$INSTALL_DIR/.env"
+            echo "PORT=$new_port" >> "$INSTALL_DIR/.env"
+        fi
+
+        configured=true
+        success "已更新 .env"
+    fi
+
+    if [ "$configured" = false ]; then
+        error "未检测到已有安装（找不到 docker-compose.yml 或 .env）"
+        echo ""
+        info "请先运行安装: ./install.sh install"
+        return 1
+    fi
+
+    success "端口已修改: $current_port → $new_port"
+    echo ""
+
+    # 询问是否重启
+    read -p "是否现在重启服务使配置生效？[y/n, 默认 y] " restart_now < /dev/tty
+    restart_now=${restart_now:-y}
+    if [[ "$restart_now" != "n" && "$restart_now" != "N" ]]; then
+        restart_service
+    fi
+}
+
+# 重新生成 API Key（适用于已有部署）
+regenerate_api_key() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔑 重新生成 API Key"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    warning "重新生成后，旧的 API Key 将立即失效"
+    read -p "确认重新生成？[y/n, 默认 n] " confirm < /dev/tty
+    confirm=${confirm:-n}
+
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        info "已取消"
+        return 0
+    fi
+
+    local NEW_API_KEY=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)
+    local configured=false
+
+    # Docker 模式
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        info "检测到 Docker 模式"
+
+        if grep -q "API_KEY=" "$DATA_DIR/docker-compose.yml"; then
+            sed -i.bak "s|API_KEY=.*|API_KEY=$NEW_API_KEY|" "$DATA_DIR/docker-compose.yml"
+            rm -f "$DATA_DIR/docker-compose.yml.bak"
+        else
+            sed -i.bak "/ENABLE_WEBHOOK=/i\\
+      - API_KEY=$NEW_API_KEY" "$DATA_DIR/docker-compose.yml"
+            rm -f "$DATA_DIR/docker-compose.yml.bak"
+        fi
+
+        configured=true
+        success "已更新 docker-compose.yml"
+    fi
+
+    # PM2 模式
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        info "检测到 PM2 模式"
+
+        if grep -q "^API_KEY=" "$INSTALL_DIR/.env"; then
+            sed -i.bak "s|^API_KEY=.*|API_KEY=$NEW_API_KEY|" "$INSTALL_DIR/.env"
+            rm -f "$INSTALL_DIR/.env.bak"
+        else
+            echo "" >> "$INSTALL_DIR/.env"
+            echo "# API 认证密钥" >> "$INSTALL_DIR/.env"
+            echo "API_KEY=$NEW_API_KEY" >> "$INSTALL_DIR/.env"
+        fi
+
+        configured=true
+        success "已更新 .env"
+    fi
+
+    if [ "$configured" = false ]; then
+        error "未检测到已有安装（找不到 docker-compose.yml 或 .env）"
+        echo ""
+        info "请先运行安装: ./install.sh install"
+        return 1
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔑 新 API Key:"
+    echo ""
+    echo -e "   ${GREEN}$NEW_API_KEY${NC}"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    warning "请妥善保管，用于 REST API 调用"
+    echo ""
+
+    # 询问是否重启
+    read -p "是否现在重启服务使配置生效？[y/n, 默认 y] " restart_now < /dev/tty
+    restart_now=${restart_now:-y}
+    if [[ "$restart_now" != "n" && "$restart_now" != "N" ]]; then
+        restart_service
+    fi
+}
+
 # 配置 Webhook Secret（适用于已有部署）
 configure_webhook_secret() {
     echo ""
@@ -1899,16 +2146,22 @@ config_menu() {
     echo "⚙️  配置管理"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  1) 完整重新配置（端口、API Key、鉴权、Webhook）"
-    echo "  2) 生成/更新 Webhook Secret"
+    echo "  1) 修改访问密码"
+    echo "  2) 修改端口"
+    echo "  3) 重新生成 API Key"
+    echo "  4) 重新生成 Webhook Secret"
+    echo "  5) 完整重新配置（端口、API Key、鉴权、Webhook）"
     echo "  0) 返回"
     echo ""
 
-    read -p "请选择 [0-2]: " config_choice < /dev/tty
+    read -p "请选择 [0-5]: " config_choice < /dev/tty
 
     case ${config_choice:-0} in
-        1) configure_env ;;
-        2) configure_webhook_secret ;;
+        1) change_password ;;
+        2) change_port ;;
+        3) regenerate_api_key ;;
+        4) configure_webhook_secret ;;
+        5) configure_env ;;
         0) main_menu ;;
         *) error "无效选择" ;;
     esac
@@ -1986,6 +2239,15 @@ case "${1:-menu}" in
         ;;
     config|c)
         configure_env
+        ;;
+    password|pw)
+        change_password
+        ;;
+    port)
+        change_port
+        ;;
+    api-key|ak)
+        regenerate_api_key
         ;;
     webhook-secret|ws)
         configure_webhook_secret
