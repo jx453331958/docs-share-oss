@@ -1213,6 +1213,50 @@ uninstall() {
     print_logo
     warning "即将卸载 Docs Share"
     echo ""
+
+    # 检测是否有 Webhook 配置的仓库
+    local git_repos=()
+    local ssh_keys=()
+
+    # 查找克隆的 Git 仓库（从 docker-compose.yml 或 .env 中提取）
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        local repo_path=$(grep "volumes:" -A1 "$DATA_DIR/docker-compose.yml" | grep -v "^#" | grep -v "volumes:" | grep -v ".ssh" | head -1 | cut -d':' -f1 | xargs)
+        if [ -n "$repo_path" ] && [ -d "$repo_path" ] && [ -d "$repo_path/.git" ]; then
+            git_repos+=("$repo_path")
+        fi
+    fi
+
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        local repo_path=$(grep "^GIT_REPO_PATH=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+        if [ -n "$repo_path" ] && [ -d "$repo_path" ] && [ -d "$repo_path/.git" ]; then
+            if [[ ! " ${git_repos[@]} " =~ " ${repo_path} " ]]; then
+                git_repos+=("$repo_path")
+            fi
+        fi
+    fi
+
+    # 查找生成的 SSH 密钥
+    if [ -d "$HOME/.ssh" ]; then
+        while IFS= read -r key; do
+            ssh_keys+=("$key")
+        done < <(find "$HOME/.ssh" -name "github_docs_*" -type f ! -name "*.pub" 2>/dev/null)
+    fi
+
+    # 显示将要删除的内容
+    echo "将删除以下内容："
+    echo ""
+    echo "  • 安装目录: $INSTALL_DIR"
+    echo "  • 数据目录: $DATA_DIR"
+
+    if [ ${#git_repos[@]} -gt 0 ]; then
+        echo "  • Git 仓库: ${git_repos[@]}"
+    fi
+
+    if [ ${#ssh_keys[@]} -gt 0 ]; then
+        echo "  • SSH 密钥: ${#ssh_keys[@]} 个"
+    fi
+
+    echo ""
     read -p "是否保留文档数据？[Y/n] " keep_data < /dev/tty
     read -p "确认卸载？[y/N] " confirm < /dev/tty
 
@@ -1238,6 +1282,47 @@ uninstall() {
         fi
     else
         info "保留数据目录: $DATA_DIR"
+    fi
+
+    # 删除 Git 仓库（如果有）
+    if [ ${#git_repos[@]} -gt 0 ]; then
+        echo ""
+        read -p "是否删除克隆的 Git 仓库？[y/N] " delete_repos < /dev/tty
+        if [[ "$delete_repos" == "y" || "$delete_repos" == "Y" ]]; then
+            for repo in "${git_repos[@]}"; do
+                rm -rf "$repo"
+                success "已删除仓库: $repo"
+            done
+        else
+            info "保留 Git 仓库"
+        fi
+    fi
+
+    # 删除 SSH 密钥（如果有）
+    if [ ${#ssh_keys[@]} -gt 0 ]; then
+        echo ""
+        read -p "是否删除生成的 SSH Deploy Keys？[y/N] " delete_keys < /dev/tty
+        if [[ "$delete_keys" == "y" || "$delete_keys" == "Y" ]]; then
+            for key in "${ssh_keys[@]}"; do
+                rm -f "$key" "$key.pub"
+                success "已删除密钥: $(basename $key)"
+
+                # 从 SSH config 中删除对应的配置
+                if [ -f "$HOME/.ssh/config" ]; then
+                    local key_name=$(basename "$key")
+                    local host_name="github-${key_name#github_docs_}"
+                    host_name="${host_name//_/-}"
+
+                    # 删除相关的 Host 配置块
+                    sed -i.bak "/# Deploy key for.*$host_name/,/^$/d" "$HOME/.ssh/config" 2>/dev/null || true
+                    sed -i.bak "/^Host $host_name$/,/^$/d" "$HOME/.ssh/config" 2>/dev/null || true
+                    rm -f "$HOME/.ssh/config.bak"
+                fi
+            done
+            success "已删除 SSH 密钥和配置"
+        else
+            info "保留 SSH 密钥"
+        fi
     fi
 
     # 清理完成
