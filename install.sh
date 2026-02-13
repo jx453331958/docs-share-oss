@@ -1389,6 +1389,35 @@ update() {
     print_logo
     info "检查更新..."
 
+    # Docker 模式：拉取最新镜像并重启
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        info "检测到 Docker 模式，拉取最新镜像..."
+        cd "$DATA_DIR"
+
+        docker compose pull
+        success "镜像更新完成"
+
+        # 检查容器是否在运行
+        if docker compose ps --status running 2>/dev/null | grep -q "docs-share"; then
+            echo ""
+            read -p "是否现在重启服务？[y/n, 默认 y] " restart_now < /dev/tty
+            restart_now=${restart_now:-y}
+            if [[ "$restart_now" != "n" && "$restart_now" != "N" ]]; then
+                docker compose up -d
+                success "服务已重启！"
+            fi
+        else
+            read -p "是否现在启动服务？[y/n, 默认 y] " start_now < /dev/tty
+            start_now=${start_now:-y}
+            if [[ "$start_now" != "n" && "$start_now" != "N" ]]; then
+                docker compose up -d
+                success "服务已启动！"
+            fi
+        fi
+        return
+    fi
+
+    # PM2 模式：git pull 更新源码
     if [ ! -d "$INSTALL_DIR/.git" ]; then
         error "未找到安装目录，请先运行安装"
         exit 1
