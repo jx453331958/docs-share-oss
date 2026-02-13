@@ -617,15 +617,45 @@ EOF
     info "文档目录: $ACTUAL_DOCS_DIR"
     info "文档数量: $DOC_COUNT 个 .md 文件"
     echo ""
+
+    # 获取配置的端口
+    local webhook_port=3457
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        webhook_port=$(grep "PORT=" "$DATA_DIR/docker-compose.yml" | head -1 | cut -d'=' -f2 | tr -d ' "')
+    elif [ -f "$INSTALL_DIR/.env" ]; then
+        webhook_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+    fi
+    webhook_port=${webhook_port:-3457}
+
+    # 尝试获取公网 IP 或主机名
+    local server_addr="your-server"
+    if command -v curl &> /dev/null; then
+        local public_ip=$(curl -s --max-time 2 ifconfig.me 2>/dev/null || curl -s --max-time 2 icanhazip.com 2>/dev/null)
+        if [ -n "$public_ip" ]; then
+            server_addr="$public_ip"
+        fi
+    fi
+    if [ "$server_addr" = "your-server" ] && [ -n "$(hostname -f 2>/dev/null)" ]; then
+        server_addr="$(hostname -f)"
+    fi
+
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "📝 下一步：配置 GitHub Webhook"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "1. 打开仓库: https://github.com/$REPO/settings/hooks"
-    echo "2. Add webhook"
-    echo "3. Payload URL: http://your-server:3457/api/webhook"
+    echo "2. 点击 Add webhook"
+    echo -e "3. Payload URL: ${GREEN}http://${server_addr}:${webhook_port}/api/webhook${NC}"
     echo "4. Content type: application/json"
     echo "5. Events: Just the push event"
+    echo "6. 点击 Add webhook"
+    echo ""
+    if [ "$server_addr" != "your-server" ]; then
+        success "已自动检测到服务器地址: $server_addr"
+        info "请确认该地址可从外网访问，如不正确请手动修改"
+    else
+        warning "无法自动检测服务器地址，请替换 your-server 为实际域名或 IP"
+    fi
     echo ""
     info "详细配置见: cat WEBHOOK-GUIDE.md"
     echo ""
@@ -818,15 +848,45 @@ EOF
     info "服务读取: $DATA_DIR/docs → $ACTUAL_DOCS_DIR"
     info "文档数量: $DOC_COUNT 个 .md 文件"
     echo ""
+
+    # 获取配置的端口
+    local webhook_port=3457
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        webhook_port=$(grep "PORT=" "$DATA_DIR/docker-compose.yml" | head -1 | cut -d'=' -f2 | tr -d ' "')
+    elif [ -f "$INSTALL_DIR/.env" ]; then
+        webhook_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+    fi
+    webhook_port=${webhook_port:-3457}
+
+    # 尝试获取公网 IP 或主机名
+    local server_addr="your-server"
+    if command -v curl &> /dev/null; then
+        local public_ip=$(curl -s --max-time 2 ifconfig.me 2>/dev/null || curl -s --max-time 2 icanhazip.com 2>/dev/null)
+        if [ -n "$public_ip" ]; then
+            server_addr="$public_ip"
+        fi
+    fi
+    if [ "$server_addr" = "your-server" ] && [ -n "$(hostname -f 2>/dev/null)" ]; then
+        server_addr="$(hostname -f)"
+    fi
+
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "📝 下一步：配置 GitHub Webhook"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "1. 打开仓库: https://github.com/$REPO/settings/hooks"
-    echo "2. Add webhook"
-    echo "3. Payload URL: http://your-server:3457/api/webhook"
+    echo "2. 点击 Add webhook"
+    echo -e "3. Payload URL: ${GREEN}http://${server_addr}:${webhook_port}/api/webhook${NC}"
     echo "4. Content type: application/json"
     echo "5. Events: Just the push event"
+    echo "6. 点击 Add webhook"
+    echo ""
+    if [ "$server_addr" != "your-server" ]; then
+        success "已自动检测到服务器地址: $server_addr"
+        info "请确认该地址可从外网访问，如不正确请手动修改"
+    else
+        warning "无法自动检测服务器地址，请替换 your-server 为实际域名或 IP"
+    fi
     echo ""
     info "详细配置见: cat WEBHOOK-GUIDE.md"
     echo ""
