@@ -142,6 +142,32 @@
         }
         .sidebar h1 span { color: var(--accent); }
 
+        .user-menu-btn {
+            padding: 6px 10px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .user-menu-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--bg-hover);
+        }
+
+        .user-menu-btn svg {
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+        }
+
         /* ── Search & Controls ── */
         .sidebar-controls {
             margin-bottom: 16px;
@@ -581,10 +607,16 @@
                     <button class="search-clear" id="searchClear" onclick="clearSearch()">×</button>
                 </div>
 
-                <button class="refresh-btn" id="refreshBtn" onclick="refreshDocs()">
-                    <svg viewBox="0 0 16 16"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/></svg>
-                    刷新
-                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="user-menu-btn" onclick="window.location.href='/users.html'" title="用户管理">
+                        <svg viewBox="0 0 16 16"><path d="M10.5 5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm.061 3.073a4 4 0 1 0-5.123 0 6.004 6.004 0 0 0-3.431 5.142.75.75 0 0 0 1.498.07 4.5 4.5 0 0 1 8.99 0 .75.75 0 0 0 1.498-.07 6.005 6.005 0 0 0-3.432-5.142Z"/></svg>
+                        管理
+                    </button>
+                    <button class="refresh-btn" id="refreshBtn" onclick="refreshDocs()" style="flex: 1;">
+                        <svg viewBox="0 0 16 16"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/></svg>
+                        刷新
+                    </button>
+                </div>
             </div>
 
             <ul class="doc-list" id="docList"></ul>
