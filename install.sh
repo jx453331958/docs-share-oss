@@ -1842,6 +1842,105 @@ uninstall() {
     success "卸载完成！"
 }
 
+# 配置 Webhook Secret（适用于已有部署）
+configure_webhook_secret() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔐 配置 Webhook Secret"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # 生成 secret
+    local WEBHOOK_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 64)
+
+    local configured=false
+
+    # Docker 模式
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        info "检测到 Docker 模式"
+
+        if grep -q "WEBHOOK_SECRET=" "$DATA_DIR/docker-compose.yml"; then
+            # 更新已有值
+            sed -i.bak "s|WEBHOOK_SECRET=.*|WEBHOOK_SECRET=$WEBHOOK_SECRET|" "$DATA_DIR/docker-compose.yml"
+            rm -f "$DATA_DIR/docker-compose.yml.bak"
+        else
+            # 在 ENABLE_WEBHOOK 行后添加
+            sed -i.bak "/ENABLE_WEBHOOK=/a\\
+      - WEBHOOK_SECRET=$WEBHOOK_SECRET" "$DATA_DIR/docker-compose.yml"
+            rm -f "$DATA_DIR/docker-compose.yml.bak"
+        fi
+
+        configured=true
+        success "已更新 docker-compose.yml"
+    fi
+
+    # PM2 模式
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        info "检测到 PM2 模式"
+
+        if grep -q "^WEBHOOK_SECRET=" "$INSTALL_DIR/.env"; then
+            sed -i.bak "s|^WEBHOOK_SECRET=.*|WEBHOOK_SECRET=$WEBHOOK_SECRET|" "$INSTALL_DIR/.env"
+            rm -f "$INSTALL_DIR/.env.bak"
+        else
+            echo "" >> "$INSTALL_DIR/.env"
+            echo "# Webhook 签名密钥" >> "$INSTALL_DIR/.env"
+            echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$INSTALL_DIR/.env"
+        fi
+
+        configured=true
+        success "已更新 .env"
+    fi
+
+    if [ "$configured" = false ]; then
+        error "未检测到已有安装（找不到 docker-compose.yml 或 .env）"
+        echo ""
+        info "请先运行安装: ./install.sh install"
+        return 1
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔑 Webhook Secret:"
+    echo ""
+    echo -e "   ${GREEN}$WEBHOOK_SECRET${NC}"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    warning "请妥善保管，并填入 GitHub/GitLab Webhook 配置"
+    echo ""
+    info "GitHub: 仓库 Settings → Webhooks → Edit → Secret 字段"
+    info "GitLab: 仓库 Settings → Webhooks → Secret Token 字段"
+    echo ""
+
+    # 询问是否重启
+    read -p "是否现在重启服务使配置生效？[y/n, 默认 y] " restart_now < /dev/tty
+    restart_now=${restart_now:-y}
+    if [[ "$restart_now" != "n" && "$restart_now" != "N" ]]; then
+        restart_service
+    fi
+}
+
+# 配置管理子菜单
+config_menu() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚙️  配置管理"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  1) 完整重新配置（端口、API Key、鉴权、Webhook）"
+    echo "  2) 生成/更新 Webhook Secret"
+    echo "  0) 返回"
+    echo ""
+
+    read -p "请选择 [0-2]: " config_choice < /dev/tty
+
+    case ${config_choice:-0} in
+        1) configure_env ;;
+        2) configure_webhook_secret ;;
+        0) main_menu ;;
+        *) error "无效选择" ;;
+    esac
+}
+
 # 日志查看
 view_logs() {
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
@@ -1882,7 +1981,7 @@ main_menu() {
         5) restart_service ;;
         6) check_status ;;
         7) view_logs ;;
-        8) configure_env ;;
+        8) config_menu ;;
         9) uninstall ;;
         0) exit 0 ;;
         *) error "无效选择"; exit 1 ;;
@@ -1914,6 +2013,9 @@ case "${1:-menu}" in
         ;;
     config|c)
         configure_env
+        ;;
+    webhook-secret|ws)
+        configure_webhook_secret
         ;;
     uninstall)
         uninstall
