@@ -27,6 +27,45 @@ success() { echo -e "${GREEN}✓${NC} $1"; }
 warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 error() { echo -e "${RED}✗${NC} $1"; }
 
+# 检测端口是否被占用
+is_port_in_use() {
+    local port=$1
+    # 使用 lsof 或 netstat 检测端口
+    if command -v lsof &> /dev/null; then
+        lsof -i ":$port" -sTCP:LISTEN -t &> /dev/null
+    elif command -v netstat &> /dev/null; then
+        netstat -tuln 2>/dev/null | grep -q ":$port "
+    elif command -v ss &> /dev/null; then
+        ss -tuln 2>/dev/null | grep -q ":$port "
+    else
+        # 如果没有工具可用，尝试绑定端口测试
+        (echo > /dev/tcp/127.0.0.1/$port) &> /dev/null
+    fi
+}
+
+# 生成一个未被占用的随机端口
+generate_available_port() {
+    local min_port=${1:-3000}
+    local max_port=${2:-9999}
+    local port
+    local max_attempts=50
+
+    for ((i=0; i<max_attempts; i++)); do
+        # 生成随机端口号
+        port=$((RANDOM % (max_port - min_port + 1) + min_port))
+
+        # 检测端口是否被占用
+        if ! is_port_in_use "$port"; then
+            echo "$port"
+            return 0
+        fi
+    done
+
+    # 如果 50 次都没找到，返回一个基础端口
+    echo "3457"
+    return 1
+}
+
 # 打印 Logo
 print_logo() {
     cat << "EOF"
@@ -228,13 +267,26 @@ EOF
     # 1. 配置端口
     info "1. 服务端口配置"
     echo ""
-    read -p "服务端口 [默认: 3457]: " custom_port < /dev/tty
-    PORT=${custom_port:-3457}
+
+    # 生成一个未被占用的端口
+    local default_port=$(generate_available_port 3000 9999)
+    info "自动检测到可用端口: $default_port"
+    echo ""
+
+    read -p "服务端口 [默认: $default_port]: " custom_port < /dev/tty
+    PORT=${custom_port:-$default_port}
 
     # 验证端口号
     if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-        warning "端口号无效，使用默认值 3457"
-        PORT=3457
+        warning "端口号无效，使用自动检测的端口 $default_port"
+        PORT=$default_port
+    fi
+
+    # 检查用户输入的端口是否被占用
+    if [ -n "$custom_port" ] && is_port_in_use "$PORT"; then
+        warning "端口 $PORT 已被占用"
+        PORT=$(generate_available_port 3000 9999)
+        success "已切换到可用端口: $PORT"
     fi
 
     success "端口: $PORT"
@@ -1079,13 +1131,26 @@ configure_env() {
     # 1. 配置端口
     info "1. 服务端口配置"
     echo ""
-    read -p "服务端口 [默认: 3457]: " custom_port < /dev/tty
-    PORT=${custom_port:-3457}
+
+    # 生成一个未被占用的端口
+    local default_port=$(generate_available_port 3000 9999)
+    info "自动检测到可用端口: $default_port"
+    echo ""
+
+    read -p "服务端口 [默认: $default_port]: " custom_port < /dev/tty
+    PORT=${custom_port:-$default_port}
 
     # 验证端口号
     if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-        warning "端口号无效，使用默认值 3457"
-        PORT=3457
+        warning "端口号无效，使用自动检测的端口 $default_port"
+        PORT=$default_port
+    fi
+
+    # 检查用户输入的端口是否被占用
+    if [ -n "$custom_port" ] && is_port_in_use "$PORT"; then
+        warning "端口 $PORT 已被占用"
+        PORT=$(generate_available_port 3000 9999)
+        success "已切换到可用端口: $PORT"
     fi
 
     success "端口: $PORT"
