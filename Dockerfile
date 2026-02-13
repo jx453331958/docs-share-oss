@@ -8,9 +8,11 @@ RUN apk add --no-cache git openssh-client \
 
 WORKDIR /app
 
-COPY package.json server.mjs ./
+COPY package.json server.mjs entrypoint.sh ./
 COPY public ./public
 COPY docs ./docs
+
+RUN chmod +x entrypoint.sh
 
 # docs 目录可以挂载用户自己的文档覆盖
 VOLUME /app/docs
@@ -18,4 +20,4 @@ VOLUME /app/docs
 # 容器内部固定使用 3457 端口，外部端口通过 docker-compose.yml 映射
 EXPOSE 3457
 
-CMD ["node", "server.mjs"]
+ENTRYPOINT ["./entrypoint.sh"]
