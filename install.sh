@@ -300,17 +300,17 @@ EOF
     echo ""
 
     # 创建 docker-compose.yml
+    # 容器内部固定使用 3457 端口，仅映射外部端口
     cat > "$DATA_DIR/docker-compose.yml" << EOF
 services:
   docs-share:
     image: ghcr.io/jx453331958/docs-share-oss:latest
     container_name: docs-share
     ports:
-      - "$PORT:$PORT"
+      - "$PORT:3457"
     volumes:
       - ./docs:/app/docs
     environment:
-      - PORT=$PORT
       - API_KEY=$API_KEY
       - ENABLE_WEBHOOK=false
     restart: unless-stopped
@@ -658,8 +658,9 @@ configure_webhook_docker() {
     cp "$DATA_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml.backup"
 
     # 从备份中读取配置
-    local CONFIGURED_PORT=$(grep "PORT=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | cut -d'=' -f2 | tr -d ' "' | tr -d '-')
-    local CONFIGURED_API_KEY=$(grep "API_KEY=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | cut -d'=' -f2 | tr -d ' "' | tr -d '-')
+    # 从 ports 行提取外部端口（格式: - "PORT:3457" 或旧格式 - "PORT:PORT"）
+    local CONFIGURED_PORT=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+    local CONFIGURED_API_KEY=$(grep "API_KEY=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*API_KEY=//' | tr -d ' "' | tr -d '-')
 
     # 验证提取的配置
     if [ -z "$CONFIGURED_PORT" ]; then
@@ -677,13 +678,14 @@ configure_webhook_docker() {
     info "检测到配置: 端口=$CONFIGURED_PORT"
 
     # 更新 volumes 挂载点和环境变量
+    # 容器内部固定使用 3457 端口，仅映射外部端口
     cat > "$DATA_DIR/docker-compose.yml" << EOF
 services:
   docs-share:
     image: ghcr.io/jx453331958/docs-share-oss:latest
     container_name: docs-share
     ports:
-      - "$CONFIGURED_PORT:$CONFIGURED_PORT"
+      - "$CONFIGURED_PORT:3457"
     volumes:
       - $ACTUAL_DOCS_DIR:/app/docs
 EOF
@@ -697,7 +699,6 @@ EOF
 
     cat >> "$DATA_DIR/docker-compose.yml" << EOF
     environment:
-      - PORT=$CONFIGURED_PORT
       - API_KEY=$CONFIGURED_API_KEY
       - ENABLE_WEBHOOK=true
       - GIT_REPO_PATH=/app/docs
@@ -725,10 +726,10 @@ EOF
     info "文档数量: $DOC_COUNT 个 .md 文件"
     echo ""
 
-    # 获取配置的端口
+    # 获取配置的外部端口（从 ports 映射行提取）
     local webhook_port=3457
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
-        webhook_port=$(grep "PORT=" "$DATA_DIR/docker-compose.yml" | head -1 | cut -d'=' -f2 | tr -d ' "')
+        webhook_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
     elif [ -f "$INSTALL_DIR/.env" ]; then
         webhook_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
     fi
@@ -1014,10 +1015,10 @@ EOF
     info "文档数量: $DOC_COUNT 个 .md 文件"
     echo ""
 
-    # 获取配置的端口
+    # 获取配置的外部端口（从 ports 映射行提取）
     local webhook_port=3457
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
-        webhook_port=$(grep "PORT=" "$DATA_DIR/docker-compose.yml" | head -1 | cut -d'=' -f2 | tr -d ' "')
+        webhook_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
     elif [ -f "$INSTALL_DIR/.env" ]; then
         webhook_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
     fi
@@ -1449,11 +1450,20 @@ start_service() {
         exit 1
     fi
 
-    if curl -s http://localhost:3457/api/docs > /dev/null 2>&1; then
+    # 获取实际配置的外部端口
+    local service_port=3457
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        service_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+    elif [ -f "$INSTALL_DIR/.env" ]; then
+        service_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+    fi
+    service_port=${service_port:-3457}
+
+    if curl -s "http://localhost:$service_port/api/docs" > /dev/null 2>&1; then
         success "服务启动成功！"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        info "访问地址: ${GREEN}http://localhost:3457${NC}"
+        info "访问地址: ${GREEN}http://localhost:$service_port${NC}"
         info "文档目录: ${BLUE}$DATA_DIR/docs${NC}"
 
         if [ -f "$DATA_DIR/docker-compose.yml" ]; then
@@ -1529,12 +1539,21 @@ check_status() {
     echo "服务状态"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+    # 获取实际配置的外部端口
+    local service_port=3457
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        service_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+    elif [ -f "$INSTALL_DIR/.env" ]; then
+        service_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
+    fi
+    service_port=${service_port:-3457}
+
     # 检查服务是否运行
-    if curl -s http://localhost:3457/api/docs > /dev/null 2>&1; then
+    if curl -s "http://localhost:$service_port/api/docs" > /dev/null 2>&1; then
         success "服务运行中"
 
         # 获取文档数量
-        DOC_COUNT=$(curl -s http://localhost:3457/api/docs | jq '. | length' 2>/dev/null || echo "?")
+        DOC_COUNT=$(curl -s "http://localhost:$service_port/api/docs" | jq '. | length' 2>/dev/null || echo "?")
         info "文档数量: $DOC_COUNT"
 
         # 检查运行方式
