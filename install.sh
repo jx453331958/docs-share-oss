@@ -243,11 +243,33 @@ EOF
 
     # 4. 配置 Webhook（Docker 模式）
     info "4. Git Webhook 配置"
-    if configure_webhook_docker; then
-        success "Webhook 配置成功"
-    else
-        warning "Webhook 配置失败，已跳过（不影响基本功能）"
-    fi
+
+    while true; do
+        if configure_webhook_docker; then
+            success "Webhook 配置成功"
+            break
+        else
+            echo ""
+            warning "Webhook 配置失败"
+            echo ""
+            echo "可能的原因："
+            echo "  - 仓库地址格式错误"
+            echo "  - SSH 密钥未添加到 GitHub Deploy Keys"
+            echo "  - 网络连接问题"
+            echo "  - 仓库不存在或无权限访问"
+            echo ""
+            read -p "是否重试 Webhook 配置？[y/N] " retry_webhook < /dev/tty
+
+            if [[ "$retry_webhook" != "y" && "$retry_webhook" != "Y" ]]; then
+                warning "已跳过 Webhook 配置（不影响基本功能）"
+                info "稍后可运行 ./install.sh config 重新配置"
+                break
+            fi
+
+            echo ""
+            info "重新配置 Webhook..."
+        fi
+    done
 
     echo ""
     success "✅ 基础配置已完成！"
@@ -845,14 +867,14 @@ setup_github_ssh() {
 
     # 检查密钥是否已存在
     if [ -f "$KEY_PATH" ]; then
-        info "检测到已有 SSH 密钥，将复用"
-        return
+        success "检测到已有 SSH 密钥: $KEY_NAME"
+        info "将复用现有密钥（避免重复创建）"
+    else
+        # 生成 SSH 密钥
+        info "生成 SSH Deploy Key..."
+        ssh-keygen -t ed25519 -C "docs-deploy-${REPO}" -f "$KEY_PATH" -N "" -q
+        success "密钥生成完成"
     fi
-
-    # 生成 SSH 密钥
-    info "生成 SSH Deploy Key..."
-    ssh-keygen -t ed25519 -C "docs-deploy-${REPO}" -f "$KEY_PATH" -N "" -q
-    success "密钥生成完成"
 
     # 配置 SSH config
     local SSH_CONFIG="$SSH_DIR/config"
@@ -869,7 +891,9 @@ Host $HOST_NAME
     StrictHostKeyChecking no
 EOF
         chmod 600 "$SSH_CONFIG"
-        success "SSH 配置完成"
+        success "SSH 配置已添加"
+    else
+        info "SSH 配置已存在，跳过"
     fi
 
     # 显示公钥
@@ -973,7 +997,33 @@ EOF
 
     # 4. 配置 Webhook
     info "4. Git Webhook 配置"
-    configure_webhook
+
+    while true; do
+        if configure_webhook; then
+            success "Webhook 配置成功"
+            break
+        else
+            echo ""
+            warning "Webhook 配置失败"
+            echo ""
+            echo "可能的原因："
+            echo "  - 仓库地址格式错误"
+            echo "  - SSH 密钥未添加到 GitHub Deploy Keys"
+            echo "  - 网络连接问题"
+            echo "  - 仓库不存在或无权限访问"
+            echo ""
+            read -p "是否重试 Webhook 配置？[y/N] " retry_webhook < /dev/tty
+
+            if [[ "$retry_webhook" != "y" && "$retry_webhook" != "Y" ]]; then
+                warning "已跳过 Webhook 配置（不影响基本功能）"
+                info "稍后可运行 ./install.sh config 重新配置"
+                break
+            fi
+
+            echo ""
+            info "重新配置 Webhook..."
+        fi
+    done
 
     echo ""
     success "✅ 所有配置已完成！"
