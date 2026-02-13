@@ -7,6 +7,7 @@
 ### 核心功能
 - **零配置** — 把 `.md` 文件放进 `docs/` 目录就完事了，自动发现、自动生成目录
 - **零依赖** — 纯 Node.js 原生模块，无 npm 依赖
+- **访问鉴权** — 内置 HTTP Basic Auth，保护私有文档，支持多用户
 - **暗色主题** — 精心设计的深色界面，JetBrains Mono + Noto Sans SC 字体
 - **响应式** — 桌面端侧边栏可收起展开，移动端自适应
 - **实时搜索** — 支持文档标题和内容搜索，实时过滤
@@ -126,6 +127,8 @@ npm run dev  # 文件变更自动重启
 |---------|-------|------|
 | `PORT` | `3457` | 服务端口 |
 | `API_KEY` | 自动生成 | API 认证密钥（首次启动自动生成） |
+| `ENABLE_AUTH` | `false` | 是否启用前端访问鉴权（HTTP Basic Auth） |
+| `AUTH_USERS` | `admin:admin` | 授权用户列表（格式：`user1:pass1,user2:pass2`） |
 | `ENABLE_WEBHOOK` | `false` | 是否启用 Git webhook |
 | `GIT_REPO_PATH` | 项目目录 | Git 仓库**绝对路径**（webhook 执行 `git pull` 的目录） |
 
@@ -134,7 +137,14 @@ npm run dev  # 文件变更自动重启
 ```bash
 PORT=3457
 API_KEY=your-secret-api-key-here
+
+# 访问鉴权（可选）
+ENABLE_AUTH=true
+AUTH_USERS=alice:pass123,bob:pass456
+
+# Webhook（可选）
 ENABLE_WEBHOOK=true
+GIT_REPO_PATH=/path/to/repo
 ```
 
 ### 文档格式
@@ -143,6 +153,71 @@ ENABLE_WEBHOOK=true
 - 文件名作为 URL 路径
 - 第一个 `# 标题` 会被提取为侧边栏标题
 - 按文件修改时间倒序排列（最新的排最前）
+
+## 🔒 访问鉴权
+
+### 启用鉴权保护
+
+文档站默认公开访问，可启用 HTTP Basic Auth 保护私有文档：
+
+#### 方式一：安装时配置（推荐）
+
+运行 `./install.sh` 时会询问是否启用鉴权：
+
+```
+是否需要启用访问鉴权？[y/N] y
+用户名 [默认: admin]: alice
+密码: ******
+```
+
+#### 方式二：手动配置
+
+编辑 `.env` 文件：
+
+```bash
+# 启用访问鉴权
+ENABLE_AUTH=true
+
+# 单用户
+AUTH_USERS=admin:your-password
+
+# 多用户（用逗号分隔）
+AUTH_USERS=alice:pass123,bob:pass456,admin:admin123
+```
+
+重启服务生效：
+
+```bash
+# PM2 模式
+pm2 restart docs-share
+
+# Docker 模式
+cd ~/docs-share-data && docker compose restart
+```
+
+### 访问体验
+
+启用鉴权后，浏览器访问文档站会弹出登录框：
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔒 需要登录
+
+此文档站受保护，请输入用户名和密码。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+输入用户名和密码后，浏览器会记住凭证（直到关闭浏览器）。
+
+### 重要说明
+
+- ✅ **保护前端访问** — 所有页面（首页、文档内容）都需要登录
+- ✅ **不影响 API** — REST API 仍使用 `Bearer Token`（`API_KEY`）认证
+- ✅ **支持多用户** — 团队协作，每人独立账号
+- ✅ **浏览器原生** — HTTP Basic Auth，无需额外依赖
+- ⚠️ **建议配合 HTTPS** — 生产环境务必使用 HTTPS，避免密码明文传输
+
+---
 
 ## 📡 远程更新文档
 

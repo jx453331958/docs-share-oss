@@ -18,8 +18,27 @@ const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || import.meta.dirname;
 
+// 访问鉴权配置
+const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
+const AUTH_USERS = parseAuthUsers(process.env.AUTH_USERS);
+
 // 首次启动时保存生成的 API Key
 const isFirstRun = !process.env.API_KEY;
+
+// 解析用户列表：格式 "user1:pass1,user2:pass2"
+function parseAuthUsers(usersStr) {
+  if (!usersStr) return new Map([['admin', 'admin']]);
+
+  const users = new Map();
+  usersStr.split(',').forEach(pair => {
+    const [user, pass] = pair.split(':');
+    if (user && pass) {
+      users.set(user.trim(), pass.trim());
+    }
+  });
+
+  return users.size > 0 ? users : new Map([['admin', 'admin']]);
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -32,11 +51,87 @@ const MIME = {
   '.svg': 'image/svg+xml',
 };
 
-// ── Auth Middleware ──
+// ── API Auth (Bearer Token) ──
 function requireAuth(req) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.replace(/^Bearer\s+/i, '');
   return token === API_KEY;
+}
+
+// ── HTTP Basic Auth (前端访问鉴权) ──
+function requireBasicAuth(req, res) {
+  if (!ENABLE_AUTH) return true;
+
+  const authHeader = req.headers.authorization;
+
+  // 如果没有认证信息，返回 401 并要求认证
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    res.writeHead(401, {
+      'WWW-Authenticate': 'Basic realm="Docs Share - Protected Area"',
+      'Content-Type': 'text/html; charset=utf-8'
+    });
+    res.end(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>认证required</title>
+        <style>
+          body { font-family: sans-serif; padding: 50px; text-align: center; }
+          h1 { color: #333; }
+        </style>
+      </head>
+      <body>
+        <h1>🔒 需要登录</h1>
+        <p>此文档站受保护，请输入用户名和密码。</p>
+      </body>
+      </html>
+    `);
+    return false;
+  }
+
+  // 解析 Basic Auth 凭证
+  try {
+    const base64Credentials = authHeader.split(' ')[1];
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+    const [username, password] = credentials.split(':');
+
+    // 验证用户名和密码
+    const validPassword = AUTH_USERS.get(username);
+    if (validPassword && validPassword === password) {
+      return true;
+    }
+
+    // 认证失败
+    res.writeHead(401, {
+      'WWW-Authenticate': 'Basic realm="Docs Share - Protected Area"',
+      'Content-Type': 'text/html; charset=utf-8'
+    });
+    res.end(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>认证失败</title>
+        <style>
+          body { font-family: sans-serif; padding: 50px; text-align: center; }
+          h1 { color: #e74c3c; }
+        </style>
+      </head>
+      <body>
+        <h1>❌ 认证失败</h1>
+        <p>用户名或密码错误。</p>
+      </body>
+      </html>
+    `);
+    return false;
+  } catch (error) {
+    res.writeHead(401, {
+      'WWW-Authenticate': 'Basic realm="Docs Share - Protected Area"'
+    });
+    res.end('Unauthorized');
+    return false;
+  }
 }
 
 // ── Parse JSON body ──
@@ -103,6 +198,16 @@ async function extractMeta(filepath, filename) {
 }
 
 async function handleApiDocs(req, res) {
+  // 支持两种认证方式：
+  // 1. Bearer Token（用于 API 调用）
+  // 2. Basic Auth（用于前端访问）
+  const hasApiAuth = requireAuth(req);
+  const hasBasicAuth = !ENABLE_AUTH || requireBasicAuth(req, res);
+
+  if (!hasApiAuth && !hasBasicAuth) {
+    return; // requireBasicAuth 已经返回 401
+  }
+
   const files = await readdir(DOCS_DIR);
   const mdFiles = files.filter(f => f.endsWith('.md'));
   const docs = await Promise.all(mdFiles.map(f => extractMeta(join(DOCS_DIR, f), f)));
@@ -206,6 +311,11 @@ async function handleWebhook(req, res) {
 }
 
 async function serveStatic(req, res) {
+  // 前端访问需要 Basic Auth 鉴权
+  if (!requireBasicAuth(req, res)) {
+    return;
+  }
+
   const url = new URL(req.url, `http://localhost:${PORT}`);
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/') pathname = '/index.html';
@@ -300,6 +410,7 @@ ENABLE_WEBHOOK=false
   }
 
   console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}`);
+  console.log(`🔒 Auth:      ${ENABLE_AUTH ? `✓ Enabled (${AUTH_USERS.size} user${AUTH_USERS.size > 1 ? 's' : ''})` : '✗ Disabled (Public access)'}`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
   console.log(`API Endpoints:`);
   console.log(`  GET    /api/docs          - List all documents`);

@@ -217,6 +217,9 @@ EOF
     info "查看配置: cat $DATA_DIR/docker-compose.yml"
     echo ""
 
+    # 配置访问鉴权（Docker 模式）
+    configure_auth_docker
+
     # 配置 Webhook（Docker 模式）
     configure_webhook_docker
 
@@ -274,6 +277,66 @@ install_pm2() {
     info "管理命令: ${YELLOW}pm2 status${NC}"
     info "查看日志: ${YELLOW}pm2 logs docs-share${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# 配置访问鉴权（Docker 模式）
+configure_auth_docker() {
+    echo ""
+    info "是否需要启用访问鉴权？"
+    echo ""
+    echo "功能说明："
+    echo "  - 启用后，访问文档站需要输入用户名和密码"
+    echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
+    echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
+    echo ""
+    read -p "是否启用鉴权？[y/N] " enable_auth
+
+    if [[ "$enable_auth" != "y" && "$enable_auth" != "Y" ]]; then
+        info "跳过鉴权配置（公开访问）"
+        return
+    fi
+
+    echo ""
+    info "配置登录用户"
+    echo ""
+
+    # 单用户模式
+    read -p "用户名 [默认: admin]: " auth_user
+    auth_user=${auth_user:-admin}
+
+    # 密码输入（不回显）
+    read -sp "密码: " auth_pass
+    echo ""
+
+    if [ -z "$auth_pass" ]; then
+        warning "密码不能为空，使用默认密码: admin"
+        auth_pass="admin"
+    fi
+
+    # 更新 docker-compose.yml 添加认证环境变量
+    # 备份
+    cp "$DATA_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml.bak"
+
+    # 在 environment 部分添加认证配置
+    # 使用 sed 在 ENABLE_WEBHOOK=false 后添加
+    sed -i.tmp "/ENABLE_WEBHOOK=false/a\\
+      - ENABLE_AUTH=true\\
+      - AUTH_USERS=$auth_user:$auth_pass" "$DATA_DIR/docker-compose.yml"
+    rm -f "$DATA_DIR/docker-compose.yml.tmp"
+
+    success "鉴权配置完成"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔒 登录凭证"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "   用户名: $auth_user"
+    echo "   密码:   $auth_pass"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    warning "请妥善保管登录凭证"
+    echo ""
+    info "添加更多用户: 编辑 $DATA_DIR/docker-compose.yml"
+    info "格式: AUTH_USERS=user1:pass1,user2:pass2"
+    echo ""
 }
 
 # 配置 Git Webhook（Docker 模式）
@@ -615,6 +678,68 @@ EOF
     echo ""
 }
 
+# 配置访问鉴权
+configure_auth() {
+    echo ""
+    info "是否需要启用访问鉴权？"
+    echo ""
+    echo "功能说明："
+    echo "  - 启用后，访问文档站需要输入用户名和密码"
+    echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
+    echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
+    echo ""
+    read -p "是否启用鉴权？[y/N] " enable_auth
+
+    if [[ "$enable_auth" != "y" && "$enable_auth" != "Y" ]]; then
+        cat >> "$INSTALL_DIR/.env" << EOF
+
+# 访问鉴权（已禁用）
+ENABLE_AUTH=false
+EOF
+        info "跳过鉴权配置（公开访问）"
+        return
+    fi
+
+    echo ""
+    info "配置登录用户"
+    echo ""
+
+    # 单用户模式
+    read -p "用户名 [默认: admin]: " auth_user
+    auth_user=${auth_user:-admin}
+
+    # 密码输入（不回显）
+    read -sp "密码: " auth_pass
+    echo ""
+
+    if [ -z "$auth_pass" ]; then
+        warning "密码不能为空，使用默认密码: admin"
+        auth_pass="admin"
+    fi
+
+    # 写入配置
+    cat >> "$INSTALL_DIR/.env" << EOF
+
+# 访问鉴权配置
+ENABLE_AUTH=true
+AUTH_USERS=$auth_user:$auth_pass
+EOF
+
+    success "鉴权配置完成"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔒 登录凭证"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "   用户名: $auth_user"
+    echo "   密码:   $auth_pass"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    warning "请妥善保管登录凭证"
+    echo ""
+    info "添加更多用户: 编辑 $INSTALL_DIR/.env"
+    info "格式: AUTH_USERS=user1:pass1,user2:pass2"
+    echo ""
+}
+
 # 配置 GitHub SSH Deploy Key（集成到安装流程）
 setup_github_ssh() {
     local REPO="$1"
@@ -727,6 +852,9 @@ EOF
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     warning "用于 REST API 调用，请妥善保管"
     info "配置文件: $INSTALL_DIR/.env"
+
+    # 配置访问鉴权
+    configure_auth
 
     # 调用 Webhook 配置（包含 SSH 认证）
     configure_webhook
