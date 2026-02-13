@@ -18,33 +18,13 @@ cd docs-share-oss
 
 ## 安装模式
 
-### 1. Node.js 模式（推荐）
+### 1. Docker 模式（推荐）
 
-**适合：** 开发、个人使用
-
-```bash
-./install.sh install
-# 选择: 1) Node.js 直接运行
-```
-
-**特点：**
-- ✅ 安装简单，启动快速
-- ✅ 方便调试和开发
-- ✅ 占用资源少
-
-**安装后：**
-- 安装目录: `~/.docs-share`
-- 文档目录: `~/docs-share-data/docs`
-- 配置文件: `~/.docs-share/.env`
-- CLI 配置: `~/.docsrc.json`
-
-### 2. Docker 模式
-
-**适合：** 生产环境、隔离部署
+**适合：** 生产环境、隔离部署、无 Node.js 环境
 
 ```bash
 ./install.sh install
-# 选择: 2) Docker 容器运行
+# 选择: 1) Docker 容器运行
 ```
 
 **特点：**
@@ -66,13 +46,13 @@ docker compose logs -f    # 查看日志
 docker compose restart    # 重启
 ```
 
-### 3. PM2 模式（生产推荐）
+### 2. PM2 模式
 
-**适合：** 生产环境、需要进程管理
+**适合：** 生产环境、需要进程管理、已有 Node.js 环境
 
 ```bash
 ./install.sh install
-# 选择: 3) PM2 进程管理
+# 选择: 2) PM2 进程管理
 ```
 
 **特点：**
@@ -125,27 +105,22 @@ pm2 start docs-share    # 启动
 
 ## 环境要求
 
-### Node.js 模式
+### Docker 模式
 
-- **必需：** Node.js >= 18
-- **必需：** Git
-- **可选：** PM2（生产环境）
+- **必需：** Docker >= 20.10
+- **可选：** Docker Compose（通常随 Docker 安装）
 
-**安装依赖：**
+**安装 Docker：**
 
 ```bash
-# macOS
-brew install node git
+# 自动安装（Linux）
+curl -fsSL https://get.docker.com | sh
 
-# Ubuntu/Debian
-sudo apt update
-sudo apt install nodejs npm git
-
-# CentOS/RHEL
-sudo yum install nodejs git
+# macOS/Windows
+# 下载 Docker Desktop: https://www.docker.com/products/docker-desktop
 ```
 
-### Docker 模式
+### PM2 模式
 
 - **必需：** Docker >= 20.10
 - **可选：** Docker Compose（通常随 Docker 安装）

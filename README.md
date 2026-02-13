@@ -41,24 +41,33 @@ cd docs-share-oss
 ```
 
 **支持功能：**
-- ✅ 首次安装（Node.js / Docker / PM2）
+- ✅ 首次安装（Docker / PM2）
+- ✅ 自动配置环境和 API Key
 - ✅ 自动更新到最新版
 - ✅ 启动/停止/重启服务
 - ✅ 状态检查和日志查看
 - ✅ 一键卸载
 
+**安装模式：**
+```bash
+1) Docker 容器运行（推荐）- 环境隔离，自动重启
+2) PM2 进程管理 - 生产级进程守护，开机自启
+```
+
 **常用命令：**
 ```bash
-./install.sh install  # 安装
-./install.sh update   # 更新
-./install.sh start    # 启动
-./install.sh status   # 状态
-./install.sh logs     # 日志
+./install.sh install  # 安装（交互式选择模式）
+./install.sh update   # 更新到最新版
+./install.sh start    # 启动服务
+./install.sh status   # 查看状态
+./install.sh logs     # 查看日志
 ```
 
 ---
 
-### 方式一：Docker
+### 手动安装
+
+#### 方式一：Docker
 
 ```bash
 docker run -d \
@@ -79,23 +88,33 @@ cp ~/my-notes/*.md docs/
 docker compose up -d
 ```
 
-### 方式二：Node.js
+#### 方式二：PM2（生产推荐）
 
 ```bash
 git clone https://github.com/jx453331958/docs-share-oss.git
-cd docs-share
+cd docs-share-oss
 
-# 把你的 .md 文件放进 docs/ 目录
-cp ~/my-notes/*.md docs/
+# 配置环境
+cp .env.example .env
+nano .env  # 修改 API_KEY
 
-npm start
+# 安装 PM2
+npm install -g pm2
+
+# 启动服务
+pm2 start server.mjs --name docs-share
+pm2 save
+pm2 startup  # 配置开机自启
 ```
 
-打开 http://localhost:3457 即可。
-
-### 开发模式
+#### 开发模式
 
 ```bash
+# 克隆仓库
+git clone https://github.com/jx453331958/docs-share-oss.git
+cd docs-share-oss
+
+# 直接运行（热重载）
 npm run dev  # 文件变更自动重启
 ```
 

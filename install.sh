@@ -95,23 +95,21 @@ install() {
 
     # 选择安装模式
     echo "请选择安装模式："
-    echo "  1) Node.js 直接运行（推荐）"
-    echo "  2) Docker 容器运行"
-    echo "  3) PM2 进程管理（生产环境）"
+    echo "  1) Docker 容器运行（推荐）"
+    echo "  2) PM2 进程管理（需要 Node.js >= 18）"
     echo ""
-    read -p "请选择 [1-3]: " mode
+    read -p "请选择 [1-2]: " mode
 
     case $mode in
-        1) install_nodejs ;;
-        2) install_docker ;;
-        3) install_pm2 ;;
+        1) install_docker ;;
+        2) install_pm2 ;;
         *) error "无效选择"; exit 1 ;;
     esac
 }
 
-# Node.js 安装
-install_nodejs() {
-    info "使用 Node.js 模式安装..."
+# PM2 基础安装（不再调用 install_nodejs）
+install_pm2_base() {
+    info "准备 PM2 安装环境..."
 
     check_dependencies
 
@@ -143,21 +141,7 @@ install_nodejs() {
     # 配置环境变量
     configure_env
 
-    success "安装完成！"
-    echo ""
-    info "安装目录: $INSTALL_DIR"
-    info "文档目录: $DATA_DIR/docs"
-    echo ""
-
-    # 询问是否启动
-    read -p "是否现在启动服务？[Y/n] " start_now
-    if [[ "$start_now" != "n" && "$start_now" != "N" ]]; then
-        start_service
-    else
-        echo ""
-        info "稍后使用以下命令启动："
-        echo "  $0 start"
-    fi
+    success "基础安装完成！"
 }
 
 # Docker 安装
@@ -261,8 +245,8 @@ install_pm2() {
         success "PM2 安装完成"
     fi
 
-    # 先安装 Node.js 版本
-    install_nodejs
+    # 执行基础安装
+    install_pm2_base
 
     # 使用 PM2 启动
     cd "$INSTALL_DIR"
@@ -270,13 +254,26 @@ install_pm2() {
     pm2 save
 
     success "已使用 PM2 启动服务"
+    echo ""
+    info "安装目录: $INSTALL_DIR"
+    info "文档目录: $DATA_DIR/docs"
+    echo ""
 
     # 设置开机自启
     read -p "是否设置开机自启？[Y/n] " setup_startup
     if [[ "$setup_startup" != "n" && "$setup_startup" != "N" ]]; then
         pm2 startup
         success "开机自启已配置"
+        echo ""
+        info "请按照提示执行 sudo 命令"
     fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    info "访问地址: ${GREEN}http://localhost:3457${NC}"
+    info "管理命令: ${YELLOW}pm2 status${NC}"
+    info "查看日志: ${YELLOW}pm2 logs docs-share${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
 # 配置环境变量
@@ -376,26 +373,35 @@ start_service() {
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
         cd "$DATA_DIR"
         docker compose up -d
+        sleep 2
     elif command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then
         pm2 start docs-share
+        sleep 1
     else
-        cd "$INSTALL_DIR"
-        nohup node server.mjs > /dev/null 2>&1 &
-        echo $! > "$INSTALL_DIR/docs-share.pid"
+        error "未检测到安装，请先运行: $0 install"
+        exit 1
     fi
 
-    sleep 2
-
-    if curl -s http://localhost:3457/api/docs > /dev/null; then
+    if curl -s http://localhost:3457/api/docs > /dev/null 2>&1; then
         success "服务启动成功！"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         info "访问地址: ${GREEN}http://localhost:3457${NC}"
         info "文档目录: ${BLUE}$DATA_DIR/docs${NC}"
-        info "管理命令: ${YELLOW}$0 status${NC}"
+
+        if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+            info "查看日志: ${YELLOW}cd $DATA_DIR && docker compose logs -f${NC}"
+        else
+            info "查看日志: ${YELLOW}pm2 logs docs-share${NC}"
+        fi
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     else
         error "服务启动失败，请检查日志"
+        if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+            echo "  查看日志: cd $DATA_DIR && docker compose logs"
+        else
+            echo "  查看日志: pm2 logs docs-share"
+        fi
     fi
 }
 
@@ -406,17 +412,14 @@ stop_service() {
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
         cd "$DATA_DIR"
         docker compose down
+        success "Docker 容器已停止"
     elif command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then
         pm2 stop docs-share
+        success "PM2 服务已停止"
     else
-        if [ -f "$INSTALL_DIR/docs-share.pid" ]; then
-            kill $(cat "$INSTALL_DIR/docs-share.pid") 2>/dev/null || true
-            rm "$INSTALL_DIR/docs-share.pid"
-        fi
-        pkill -f "node.*server.mjs" || true
+        error "未检测到运行中的服务"
+        exit 1
     fi
-
-    success "服务已停止"
 }
 
 # 重启服务
@@ -445,15 +448,14 @@ check_status() {
         # 检查运行方式
         if [ -f "$DATA_DIR/docker-compose.yml" ]; then
             info "运行模式: Docker"
+            echo ""
             docker compose -f "$DATA_DIR/docker-compose.yml" ps
         elif command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then
             info "运行模式: PM2"
+            echo ""
             pm2 info docs-share
         else
-            info "运行模式: Node.js"
-            if [ -f "$INSTALL_DIR/docs-share.pid" ]; then
-                info "PID: $(cat $INSTALL_DIR/docs-share.pid)"
-            fi
+            warning "运行模式: 未知"
         fi
     else
         warning "服务未运行"
