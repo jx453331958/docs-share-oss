@@ -400,7 +400,14 @@ EOF
         docker compose up -d
         success "服务已启动！"
         echo ""
-        info "访问: http://localhost:$PORT"
+
+        # 显示访问地址（尝试检测公网 IP）
+        local access_addr="localhost"
+        local detected_ip=$(curl -s --max-time 3 ifconfig.me 2>/dev/null || curl -s --max-time 3 icanhazip.com 2>/dev/null)
+        if echo "$detected_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+            access_addr="$detected_ip"
+        fi
+        info "访问: http://$access_addr:$PORT"
         info "查看日志: cd $DATA_DIR && docker compose logs -f"
     fi
 }
