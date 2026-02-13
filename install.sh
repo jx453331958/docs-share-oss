@@ -98,7 +98,7 @@ install() {
     echo "  1) Docker 容器运行（推荐）"
     echo "  2) PM2 进程管理（需要 Node.js >= 18）"
     echo ""
-    read -p "请选择 [1-2]: " mode
+    read -p "请选择 [1-2]: " mode < /dev/tty
 
     case $mode in
         1) install_docker ;;
@@ -189,7 +189,7 @@ EOF
     # 1. 配置端口
     info "1. 服务端口配置"
     echo ""
-    read -p "服务端口 [默认: 3457]: " custom_port
+    read -p "服务端口 [默认: 3457]: " custom_port < /dev/tty
     PORT=${custom_port:-3457}
 
     # 验证端口号
@@ -250,7 +250,7 @@ EOF
     echo ""
 
     # 启动
-    read -p "是否现在启动服务？[Y/n] " start_now
+    read -p "是否现在启动服务？[Y/n] " start_now < /dev/tty
     if [[ "$start_now" != "n" && "$start_now" != "N" ]]; then
         cd "$DATA_DIR"
         docker compose up -d
@@ -289,7 +289,7 @@ install_pm2() {
     echo ""
 
     # 设置开机自启
-    read -p "是否设置开机自启？[Y/n] " setup_startup
+    read -p "是否设置开机自启？[Y/n] " setup_startup < /dev/tty
     if [[ "$setup_startup" != "n" && "$setup_startup" != "N" ]]; then
         pm2 startup
         success "开机自启已配置"
@@ -324,7 +324,7 @@ configure_auth_docker() {
     echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
-    read -p "是否启用鉴权？[Y/n] " enable_auth
+    read -p "是否启用鉴权？[Y/n] " enable_auth < /dev/tty
 
     if [[ "$enable_auth" == "n" || "$enable_auth" == "N" ]]; then
         warning "已禁用鉴权，文档站将公开访问"
@@ -338,11 +338,11 @@ configure_auth_docker() {
     echo ""
 
     # 管理员账号配置
-    read -p "管理员用户名 [默认: admin]: " auth_user
+    read -p "管理员用户名 [默认: admin]: " auth_user < /dev/tty
     auth_user=${auth_user:-admin}
 
     # 密码输入（不回显）
-    read -sp "管理员密码: " auth_pass
+    read -sp "管理员密码: " auth_pass < /dev/tty
     echo ""
 
     if [ -z "$auth_pass" ]; then
@@ -385,7 +385,7 @@ configure_webhook_docker() {
     echo "  - 将文档托管在 Git 仓库（GitHub/GitLab）"
     echo "  - 推送代码后，服务器自动执行 git pull 更新文档"
     echo ""
-    read -p "是否启用 Webhook？[y/N] " enable_webhook
+    read -p "是否启用 Webhook？[y/N] " enable_webhook < /dev/tty
 
     if [[ "$enable_webhook" != "y" && "$enable_webhook" != "Y" ]]; then
         info "跳过 Webhook 配置"
@@ -393,7 +393,7 @@ configure_webhook_docker() {
     fi
 
     echo ""
-    read -p "请输入 Git 仓库地址 (如: yourname/my-docs): " REPO
+    read -p "请输入 Git 仓库地址 (如: yourname/my-docs): " REPO < /dev/tty
 
     if [ -z "$REPO" ]; then
         warning "未输入仓库地址，跳过 Webhook 配置"
@@ -401,7 +401,7 @@ configure_webhook_docker() {
     fi
 
     echo ""
-    read -p "这是私有仓库吗？[y/N] " is_private
+    read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
 
     # 文档仓库路径
     DOCS_REPO_PATH="$HOME/${REPO##*/}"
@@ -412,13 +412,13 @@ configure_webhook_docker() {
     echo "  1) 仓库根目录（所有 .md 文件在根目录）"
     echo "  2) docs/ 子目录（.md 文件在 docs/ 文件夹内）"
     echo "  3) 其他自定义路径"
-    read -p "请选择 [1-3, 默认 1]: " docs_location
+    read -p "请选择 [1-3, 默认 1]: " docs_location < /dev/tty
 
     case ${docs_location:-1} in
         1) DOCS_SUBDIR="." ;;
         2) DOCS_SUBDIR="docs" ;;
         3)
-            read -p "请输入文档所在子目录（如: documents）: " custom_dir
+            read -p "请输入文档所在子目录（如: documents）: " custom_dir < /dev/tty
             DOCS_SUBDIR="${custom_dir:-.}"
             ;;
         *) DOCS_SUBDIR="." ;;
@@ -549,7 +549,7 @@ configure_webhook() {
     echo "  - 将文档托管在 Git 仓库（GitHub/GitLab）"
     echo "  - 推送代码后，服务器自动执行 git pull 更新文档"
     echo ""
-    read -p "是否启用 Webhook？[y/N] " enable_webhook
+    read -p "是否启用 Webhook？[y/N] " enable_webhook < /dev/tty
 
     if [[ "$enable_webhook" != "y" && "$enable_webhook" != "Y" ]]; then
         echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
@@ -558,7 +558,7 @@ configure_webhook() {
     fi
 
     echo ""
-    read -p "请输入 Git 仓库地址 (如: yourname/my-docs): " REPO
+    read -p "请输入 Git 仓库地址 (如: yourname/my-docs): " REPO < /dev/tty
 
     if [ -z "$REPO" ]; then
         warning "未输入仓库地址，跳过 Webhook 配置"
@@ -567,14 +567,14 @@ configure_webhook() {
     fi
 
     echo ""
-    read -p "这是私有仓库吗？[y/N] " is_private
+    read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
 
     # 询问文档仓库克隆位置
     echo ""
     info "请选择文档仓库克隆位置："
     echo "  1) 使用独立目录（推荐）: $HOME/my-docs"
     echo "  2) 使用当前项目目录: $INSTALL_DIR"
-    read -p "请选择 [1-2, 默认 1]: " repo_location
+    read -p "请选择 [1-2, 默认 1]: " repo_location < /dev/tty
 
     case ${repo_location:-1} in
         1)
@@ -594,13 +594,13 @@ configure_webhook() {
     echo "  1) 仓库根目录（所有 .md 文件在根目录）"
     echo "  2) docs/ 子目录（.md 文件在 docs/ 文件夹内）"
     echo "  3) 其他自定义路径"
-    read -p "请选择 [1-3, 默认 1]: " docs_location
+    read -p "请选择 [1-3, 默认 1]: " docs_location < /dev/tty
 
     case ${docs_location:-1} in
         1) DOCS_SUBDIR="." ;;
         2) DOCS_SUBDIR="docs" ;;
         3)
-            read -p "请输入文档所在子目录（如: documents）: " custom_dir
+            read -p "请输入文档所在子目录（如: documents）: " custom_dir < /dev/tty
             DOCS_SUBDIR="${custom_dir:-.}"
             ;;
         *) DOCS_SUBDIR="." ;;
@@ -726,7 +726,7 @@ configure_auth() {
     echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
-    read -p "是否启用鉴权？[Y/n] " enable_auth
+    read -p "是否启用鉴权？[Y/n] " enable_auth < /dev/tty
 
     if [[ "$enable_auth" == "n" || "$enable_auth" == "N" ]]; then
         cat >> "$INSTALL_DIR/.env" << EOF
@@ -745,11 +745,11 @@ EOF
     echo ""
 
     # 管理员账号配置
-    read -p "管理员用户名 [默认: admin]: " auth_user
+    read -p "管理员用户名 [默认: admin]: " auth_user < /dev/tty
     auth_user=${auth_user:-admin}
 
     # 密码输入（不回显）
-    read -sp "管理员密码: " auth_pass
+    read -sp "管理员密码: " auth_pass < /dev/tty
     echo ""
 
     if [ -z "$auth_pass" ]; then
@@ -843,7 +843,7 @@ EOF
     echo "6. 点击 ${GREEN}Add key${NC}"
     echo ""
 
-    read -p "完成后按回车继续..."
+    read -p "完成后按回车继续..." < /dev/tty
 
     # 测试连接
     echo ""
@@ -857,7 +857,7 @@ EOF
         echo "请确保已将公钥添加到 GitHub Deploy Keys"
         echo "手动测试: ssh -T $HOST_NAME"
         echo ""
-        read -p "按回车继续..."
+        read -p "按回车继续..." < /dev/tty
     fi
 }
 
@@ -877,7 +877,7 @@ configure_env() {
     # 1. 配置端口
     info "1. 服务端口配置"
     echo ""
-    read -p "服务端口 [默认: 3457]: " custom_port
+    read -p "服务端口 [默认: 3457]: " custom_port < /dev/tty
     PORT=${custom_port:-3457}
 
     # 验证端口号
@@ -973,7 +973,7 @@ update() {
     # 重启服务
     if pgrep -f "node.*server.mjs" > /dev/null; then
         info "检测到服务正在运行，建议重启"
-        read -p "是否现在重启？[Y/n] " restart_now
+        read -p "是否现在重启？[Y/n] " restart_now < /dev/tty
         if [[ "$restart_now" != "n" && "$restart_now" != "N" ]]; then
             restart_service
         fi
@@ -1103,8 +1103,8 @@ uninstall() {
     print_logo
     warning "即将卸载 Docs Share"
     echo ""
-    read -p "是否保留文档数据？[Y/n] " keep_data
-    read -p "确认卸载？[y/N] " confirm
+    read -p "是否保留文档数据？[Y/n] " keep_data < /dev/tty
+    read -p "确认卸载？[y/N] " confirm < /dev/tty
 
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "取消卸载"
@@ -1172,7 +1172,7 @@ main_menu() {
     echo "  0) 退出"
     echo ""
 
-    read -p "请选择 [0-9]: " choice
+    read -p "请选择 [0-9]: " choice < /dev/tty
 
     case $choice in
         1) install ;;
