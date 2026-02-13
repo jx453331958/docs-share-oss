@@ -210,11 +210,9 @@ EOF
 
     # 创建 docker-compose.yml
     cat > "$DATA_DIR/docker-compose.yml" << EOF
-version: '3.8'
-
 services:
   docs-share:
-    image: ghcr.io/$REPO:latest
+    image: ghcr.io/jx453331958/docs-share-oss:latest
     container_name: docs-share
     ports:
       - "$PORT:$PORT"
@@ -530,11 +528,9 @@ configure_webhook_docker() {
 
     # 更新 volumes 挂载点和环境变量
     cat > "$DATA_DIR/docker-compose.yml" << EOF
-version: '3.8'
-
 services:
   docs-share:
-    image: ghcr.io/$REPO:latest
+    image: ghcr.io/jx453331958/docs-share-oss:latest
     container_name: docs-share
     ports:
       - "3457:3457"
