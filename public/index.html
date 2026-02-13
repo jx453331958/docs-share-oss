@@ -777,11 +777,12 @@
             URL.revokeObjectURL(url);
         }
 
-        // ── Time Formatting ──
+        // ── Time Formatting (browser local timezone) ──
         function formatTime(mtimeMs) {
             if (!mtimeMs) return '';
             const now = Date.now();
             const diff = now - mtimeMs;
+            if (diff < 0) return '刚刚';
             const mins = Math.floor(diff / 60000);
             const hours = Math.floor(mins / 60);
             const days = Math.floor(hours / 24);
@@ -790,10 +791,10 @@
             if (hours < 24) return `${hours} 小时前`;
             if (days < 30) return `${days} 天前`;
             const d = new Date(mtimeMs);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            return y === new Date().getFullYear() ? `${m}-${dd}` : `${y}-${m}-${dd}`;
+            const sameYear = d.getFullYear() === new Date().getFullYear();
+            return d.toLocaleDateString(undefined, sameYear
+                ? { month: '2-digit', day: '2-digit' }
+                : { year: 'numeric', month: '2-digit', day: '2-digit' });
         }
 
         // ── Sort Logic ──
