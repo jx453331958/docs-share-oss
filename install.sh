@@ -659,7 +659,7 @@ configure_webhook_docker() {
 
     # 从备份中读取配置
     # 从 ports 行提取外部端口（格式: - "PORT:3457" 或旧格式 - "PORT:PORT"）
-    local CONFIGURED_PORT=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+    local CONFIGURED_PORT=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed -E 's/.*"([0-9]+):.*/\1/')
     local CONFIGURED_API_KEY=$(grep "API_KEY=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*API_KEY=//' | tr -d ' "' | tr -d '-')
 
     # 验证提取的配置
@@ -729,7 +729,7 @@ EOF
     # 获取配置的外部端口（从 ports 映射行提取）
     local webhook_port=3457
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
-        webhook_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+        webhook_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"([0-9]+):.*/\1/')
     elif [ -f "$INSTALL_DIR/.env" ]; then
         webhook_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
     fi
@@ -1018,7 +1018,7 @@ EOF
     # 获取配置的外部端口（从 ports 映射行提取）
     local webhook_port=3457
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
-        webhook_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+        webhook_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"([0-9]+):.*/\1/')
     elif [ -f "$INSTALL_DIR/.env" ]; then
         webhook_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
     fi
@@ -1453,7 +1453,7 @@ start_service() {
     # 获取实际配置的外部端口
     local service_port=3457
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
-        service_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+        service_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"([0-9]+):.*/\1/')
     elif [ -f "$INSTALL_DIR/.env" ]; then
         service_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
     fi
@@ -1542,7 +1542,7 @@ check_status() {
     # 获取实际配置的外部端口
     local service_port=3457
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
-        service_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"?([0-9]+):.*/\1/')
+        service_port=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml" | head -1 | sed -E 's/.*"([0-9]+):.*/\1/')
     elif [ -f "$INSTALL_DIR/.env" ]; then
         service_port=$(grep "^PORT=" "$INSTALL_DIR/.env" | cut -d'=' -f2)
     fi
