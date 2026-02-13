@@ -1175,16 +1175,40 @@ start_service() {
 stop_service() {
     info "停止服务..."
 
+    local stopped=false
+
     if [ -f "$DATA_DIR/docker-compose.yml" ]; then
         cd "$DATA_DIR"
         docker compose down
         success "Docker 容器已停止"
-    elif command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then
+        stopped=true
+    fi
+
+    if command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then
         pm2 stop docs-share
+        pm2 delete docs-share
         success "PM2 服务已停止"
-    else
-        error "未检测到运行中的服务"
-        exit 1
+        stopped=true
+    fi
+
+    # 检测并提示手动启动的进程
+    local manual_procs=$(ps aux | grep -E "node.*server\.mjs" | grep -v grep)
+    if [ -n "$manual_procs" ]; then
+        echo ""
+        warning "检测到手动启动的进程，未自动停止："
+        echo "$manual_procs" | awk '{print "  PID " $2 ": " $NF}'
+        echo ""
+        read -p "是否停止这些进程？[y/N] " kill_manual < /dev/tty
+        if [[ "$kill_manual" == "y" || "$kill_manual" == "Y" ]]; then
+            echo "$manual_procs" | awk '{print $2}' | while read pid; do
+                kill -9 "$pid" 2>/dev/null && success "已停止进程: $pid" || warning "无法停止进程: $pid"
+            done
+            stopped=true
+        fi
+    fi
+
+    if [ "$stopped" = false ]; then
+        warning "未检测到运行中的服务"
     fi
 }
 
@@ -1221,7 +1245,16 @@ check_status() {
             echo ""
             pm2 info docs-share
         else
-            warning "运行模式: 未知"
+            warning "运行模式: 未知（可能是手动启动）"
+            # 检测手动启动的进程
+            local manual_procs=$(ps aux | grep -E "node.*server\.mjs" | grep -v grep | awk '{print $2, $NF}')
+            if [ -n "$manual_procs" ]; then
+                echo ""
+                warning "检测到手动启动的进程："
+                echo "$manual_procs" | while read pid cmd; do
+                    echo "  PID $pid: $cmd"
+                done
+            fi
         fi
     else
         warning "服务未运行"
@@ -1232,19 +1265,38 @@ check_status() {
     echo "安装信息"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+    local has_installation=false
+
     if [ -d "$INSTALL_DIR" ]; then
         info "安装目录: $INSTALL_DIR"
         if [ -d "$INSTALL_DIR/.git" ]; then
             cd "$INSTALL_DIR"
             info "当前版本: $(git describe --tags --always)"
         fi
+        has_installation=true
     fi
 
-    info "文档目录: $DATA_DIR/docs"
+    if [ -d "$DATA_DIR" ]; then
+        info "数据目录: $DATA_DIR"
+        if [ -d "$DATA_DIR/docs" ]; then
+            local doc_count=$(find "$DATA_DIR/docs" -name "*.md" 2>/dev/null | wc -l)
+            info "文档文件: $doc_count 个 .md"
+        fi
+        has_installation=true
+    fi
 
     if [ -f "$INSTALL_DIR/.env" ] || [ -f "$DATA_DIR/.env" ]; then
         success "环境配置已完成"
-        info "查看 API Key: cat $INSTALL_DIR/.env 或 cat $DATA_DIR/.env"
+        if [ -f "$INSTALL_DIR/.env" ]; then
+            info "配置文件: $INSTALL_DIR/.env"
+        elif [ -f "$DATA_DIR/.env" ]; then
+            info "配置文件: $DATA_DIR/.env"
+        fi
+        has_installation=true
+    fi
+
+    if [ "$has_installation" = false ]; then
+        warning "未检测到安装（可能已卸载或使用了不同的路径）"
     fi
 
     echo ""
