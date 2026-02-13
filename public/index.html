@@ -247,7 +247,7 @@
             color: var(--accent);
         }
 
-        .refresh-btn.loading {
+        .refresh-btn.is-refreshing {
             pointer-events: none;
         }
 
@@ -257,7 +257,7 @@
             fill: currentColor;
         }
 
-        .refresh-btn.loading svg {
+        .refresh-btn.is-refreshing svg {
             animation: spin 1s linear infinite;
         }
 
@@ -911,7 +911,7 @@
         // ── Refresh ──
         async function refreshDocs() {
             const btn = document.getElementById('refreshBtn');
-            btn.classList.add('loading');
+            btn.classList.add('is-refreshing');
             try {
                 const res = await fetch('/api/docs?t=' + Date.now());
                 const list = await res.json();
@@ -920,7 +920,7 @@
             } catch (e) {
                 console.error('Failed to refresh:', e);
             } finally {
-                btn.classList.remove('loading');
+                btn.classList.remove('is-refreshing');
             }
         }
 
