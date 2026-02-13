@@ -26,10 +26,14 @@ const GIT_REPO_PATH = process.env.GIT_REPO_PATH || __dirname;
 
 // 访问鉴权配置
 const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
+const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 天
 
 // 用户数据（从文件加载或从环境变量初始化）
 let AUTH_USERS = new Map();
 let ADMIN_USER = null;
+
+// Session 管理（内存 Map）
+const SESSIONS = new Map(); // token → { username, role, createdAt }
 
 // 首次启动时保存生成的 API Key
 const isFirstRun = !process.env.API_KEY;
@@ -118,81 +122,84 @@ function requireAuth(req) {
   return token === API_KEY;
 }
 
-// ── HTTP Basic Auth (前端访问鉴权) ──
+// ── Cookie 解析 ──
+function parseCookies(req) {
+  const cookies = {};
+  const header = req.headers.cookie;
+  if (!header) return cookies;
+  header.split(';').forEach(pair => {
+    const [name, ...rest] = pair.trim().split('=');
+    if (name) cookies[name] = decodeURIComponent(rest.join('='));
+  });
+  return cookies;
+}
+
+// ── Session 创建 ──
+function createSession(username, role) {
+  const token = randomBytes(32).toString('hex');
+  SESSIONS.set(token, { username, role, createdAt: Date.now() });
+  return token;
+}
+
+// ── Session 清理（过期） ──
+function cleanExpiredSessions() {
+  const now = Date.now();
+  for (const [token, session] of SESSIONS) {
+    if (now - session.createdAt > SESSION_MAX_AGE) {
+      SESSIONS.delete(token);
+    }
+  }
+}
+
+// ── Session 鉴权（替代 Basic Auth）──
+// 优先 Cookie session，兼容 Basic Auth（API 向后兼容）
 // 返回用户信息对象或 null
-function requireBasicAuth(req, res) {
+// options.redirect: 未登录时是否 302 重定向（默认 true，API 调用设为 false）
+function requireSession(req, res, options = {}) {
   if (!ENABLE_AUTH) return { username: 'anonymous', role: 'user' };
 
-  const authHeader = req.headers.authorization;
+  const { redirect = true } = options;
 
-  // 如果没有认证信息，返回 401 并要求认证
-  if (!authHeader || !authHeader.startsWith('Basic ')) {
-    res.writeHead(401, {
-      'WWW-Authenticate': 'Basic realm="Docs Share - Protected Area"',
-      'Content-Type': 'text/html; charset=utf-8'
-    });
-    res.end(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>认证required</title>
-        <style>
-          body { font-family: sans-serif; padding: 50px; text-align: center; }
-          h1 { color: #333; }
-        </style>
-      </head>
-      <body>
-        <h1>🔒 需要登录</h1>
-        <p>此文档站受保护，请输入用户名和密码。</p>
-      </body>
-      </html>
-    `);
-    return null;
-  }
-
-  // 解析 Basic Auth 凭证
-  try {
-    const base64Credentials = authHeader.split(' ')[1];
-    const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
-    const [username, password] = credentials.split(':');
-
-    // 验证用户名和密码
-    const userInfo = AUTH_USERS.get(username);
-    if (userInfo && userInfo.password === password) {
-      return { username, role: userInfo.role };
+  // 1. 尝试从 Cookie 读取 session
+  const cookies = parseCookies(req);
+  if (cookies.session) {
+    const session = SESSIONS.get(cookies.session);
+    if (session && (Date.now() - session.createdAt < SESSION_MAX_AGE)) {
+      // 确保用户仍然存在
+      const userInfo = AUTH_USERS.get(session.username);
+      if (userInfo) {
+        return { username: session.username, role: userInfo.role };
+      }
+      // 用户已被删除，清除 session
+      SESSIONS.delete(cookies.session);
     }
-
-    // 认证失败
-    res.writeHead(401, {
-      'WWW-Authenticate': 'Basic realm="Docs Share - Protected Area"',
-      'Content-Type': 'text/html; charset=utf-8'
-    });
-    res.end(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>认证失败</title>
-        <style>
-          body { font-family: sans-serif; padding: 50px; text-align: center; }
-          h1 { color: #e74c3c; }
-        </style>
-      </head>
-      <body>
-        <h1>❌ 认证失败</h1>
-        <p>用户名或密码错误。</p>
-      </body>
-      </html>
-    `);
-    return null;
-  } catch (error) {
-    res.writeHead(401, {
-      'WWW-Authenticate': 'Basic realm="Docs Share - Protected Area"'
-    });
-    res.end('Unauthorized');
-    return null;
   }
+
+  // 2. 兼容 Basic Auth（保持 API 向后兼容）
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Basic ')) {
+    try {
+      const base64Credentials = authHeader.split(' ')[1];
+      const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+      const [username, password] = credentials.split(':');
+      const userInfo = AUTH_USERS.get(username);
+      if (userInfo && userInfo.password === password) {
+        return { username, role: userInfo.role };
+      }
+    } catch {
+      // Basic Auth 解析失败，继续到未认证处理
+    }
+  }
+
+  // 3. 未认证
+  if (redirect) {
+    res.writeHead(302, { 'Location': '/login' });
+    res.end();
+  } else {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+  }
+  return null;
 }
 
 // ── Parse JSON body ──
@@ -261,13 +268,11 @@ async function extractMeta(filepath, filename) {
 async function handleApiDocs(req, res) {
   // 支持两种认证方式：
   // 1. Bearer Token（用于 API 调用）
-  // 2. Basic Auth（用于前端访问）
+  // 2. Session / Basic Auth（用于前端访问）
   const hasApiAuth = requireAuth(req);
   if (!hasApiAuth) {
-    const user = requireBasicAuth(req, res);
-    if (!user) {
-      return; // requireBasicAuth 已经返回 401
-    }
+    const user = requireSession(req, res, { redirect: false });
+    if (!user) return;
   }
 
   const files = await readdir(DOCS_DIR);
@@ -374,7 +379,7 @@ async function handleWebhook(req, res) {
 
 // ── GET /api/users - 获取用户列表（仅管理员）──
 async function handleGetUsers(req, res) {
-  const user = requireBasicAuth(req, res);
+  const user = requireSession(req, res, { redirect: false });
   if (!user) return;
 
   if (user.role !== 'admin') {
@@ -394,7 +399,7 @@ async function handleGetUsers(req, res) {
 
 // ── POST /api/users - 添加用户（仅管理员）──
 async function handleAddUser(req, res) {
-  const user = requireBasicAuth(req, res);
+  const user = requireSession(req, res, { redirect: false });
   if (!user) return;
 
   if (user.role !== 'admin') {
@@ -429,7 +434,7 @@ async function handleAddUser(req, res) {
 
 // ── DELETE /api/users/:username - 删除用户（仅管理员）──
 async function handleDeleteUser(req, res, username) {
-  const user = requireBasicAuth(req, res);
+  const user = requireSession(req, res, { redirect: false });
   if (!user) return;
 
   if (user.role !== 'admin') {
@@ -460,16 +465,136 @@ async function handleDeleteUser(req, res, username) {
   }
 }
 
-async function serveStatic(req, res) {
-  // 前端访问需要 Basic Auth 鉴权
-  const user = requireBasicAuth(req, res);
-  if (!user) {
+// ── POST /api/login ──
+async function handleLogin(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { username, password } = body;
+
+    if (!username || !password) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '用户名和密码不能为空' }));
+      return;
+    }
+
+    const userInfo = AUTH_USERS.get(username);
+    if (!userInfo || userInfo.password !== password) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '用户名或密码错误' }));
+      return;
+    }
+
+    const token = createSession(username, userInfo.role);
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Set-Cookie': `session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAX_AGE / 1000}`,
+    });
+    res.end(JSON.stringify({ success: true, username, role: userInfo.role }));
+  } catch (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
+// ── POST /api/logout ──
+function handleLogout(req, res) {
+  const cookies = parseCookies(req);
+  if (cookies.session) {
+    SESSIONS.delete(cookies.session);
+  }
+  res.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Set-Cookie': 'session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0',
+  });
+  res.end(JSON.stringify({ success: true }));
+}
+
+// ── GET /api/me ──
+function handleMe(req, res) {
+  if (!ENABLE_AUTH) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ username: 'anonymous', role: 'user', authEnabled: false }));
     return;
   }
 
+  const user = requireSession(req, res, { redirect: false });
+  if (!user) return;
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ username: user.username, role: user.role, authEnabled: true }));
+}
+
+// ── PUT /api/users/:username/password ──
+async function handleChangePassword(req, res, targetUsername) {
+  const user = requireSession(req, res, { redirect: false });
+  if (!user) return;
+
+  try {
+    const body = await parseBody(req);
+    const { oldPassword, newPassword } = body;
+
+    if (!newPassword) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '新密码不能为空' }));
+      return;
+    }
+
+    if (!AUTH_USERS.has(targetUsername)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '用户不存在' }));
+      return;
+    }
+
+    // 管理员可修改任意用户密码；普通用户只能改自己的，且需验证旧密码
+    if (user.role !== 'admin') {
+      if (user.username !== targetUsername) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: '无权修改其他用户的密码' }));
+        return;
+      }
+      const userInfo = AUTH_USERS.get(targetUsername);
+      if (!oldPassword || userInfo.password !== oldPassword) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: '旧密码错误' }));
+        return;
+      }
+    }
+
+    const targetInfo = AUTH_USERS.get(targetUsername);
+    targetInfo.password = newPassword;
+    AUTH_USERS.set(targetUsername, targetInfo);
+    await saveUsers();
+
+    console.log(`[Auth] Password changed for: ${targetUsername} (by ${user.username})`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, message: '密码修改成功' }));
+  } catch (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
+async function serveStatic(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/') pathname = '/index.html';
+
+  // 登录页公开访问
+  if (pathname === '/login.html' || pathname === '/login') {
+    const filepath = join(PUBLIC_DIR, 'login.html');
+    try {
+      const data = await readFile(filepath);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    } catch {
+      res.writeHead(404); res.end('Not Found');
+    }
+    return;
+  }
+
+  // 其他页面需要认证
+  const user = requireSession(req, res);
+  if (!user) return;
 
   // Web UI 静态文件从 public/ 目录提供，文档从 docs/ 目录提供
   const isPublicFile = pathname === '/index.html' || pathname === '/users.html';
@@ -501,7 +626,7 @@ const server = createServer(async (req, res) => {
   // CORS headers for API endpoints
   if (pathname.startsWith('/api/')) {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (req.method === 'OPTIONS') {
@@ -545,14 +670,36 @@ const server = createServer(async (req, res) => {
     return handleAddUser(req, res);
   }
 
+  if (pathname.startsWith('/api/users/') && pathname.endsWith('/password') && req.method === 'PUT') {
+    const parts = pathname.replace('/api/users/', '').replace('/password', '');
+    const username = decodeURIComponent(parts);
+    return handleChangePassword(req, res, username);
+  }
+
   if (pathname.startsWith('/api/users/') && req.method === 'DELETE') {
     const username = decodeURIComponent(pathname.replace('/api/users/', ''));
     return handleDeleteUser(req, res, username);
   }
 
+  // Auth API
+  if (pathname === '/api/login' && req.method === 'POST') {
+    return handleLogin(req, res);
+  }
+
+  if (pathname === '/api/logout' && req.method === 'POST') {
+    return handleLogout(req, res);
+  }
+
+  if (pathname === '/api/me' && req.method === 'GET') {
+    return handleMe(req, res);
+  }
+
   // Static files
   return serveStatic(req, res);
 });
+
+// 定时清理过期 session（每小时）
+setInterval(cleanExpiredSessions, 60 * 60 * 1000);
 
 server.listen(PORT, '0.0.0.0', async () => {
   // 加载用户数据
@@ -601,9 +748,13 @@ ENABLE_WEBHOOK=false
     console.log(`  POST   /api/webhook       - Git webhook handler`);
   }
   if (ENABLE_AUTH) {
+    console.log(`  POST   /api/login         - Login`);
+    console.log(`  POST   /api/logout        - Logout`);
+    console.log(`  GET    /api/me            - Current user info`);
     console.log(`  GET    /api/users         - List users (admin only)`);
     console.log(`  POST   /api/users         - Add user (admin only)`);
     console.log(`  DELETE /api/users/:user   - Delete user (admin only)`);
+    console.log(`  PUT    /api/users/:user/password - Change password`);
   }
   console.log();
 });

@@ -632,6 +632,10 @@
                     <svg viewBox="0 0 16 16"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/></svg>
                     添加用户
                 </button>
+                <button class="btn btn-danger" onclick="handleLogout()">
+                    <svg viewBox="0 0 16 16"><path d="M2 2.75C2 1.784 2.784 1 3.75 1h2.5a.75.75 0 0 1 0 1.5h-2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h2.5a.75.75 0 0 1 0 1.5h-2.5A1.75 1.75 0 0 1 2 13.25Zm9.22-1.03a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 0 1-1.06-1.06l1.72-1.72H6.75a.75.75 0 0 1 0-1.5h6.19l-1.72-1.72a.75.75 0 0 1 0-1.06Z"/></svg>
+                    登出
+                </button>
             </div>
         </div>
 
@@ -677,6 +681,31 @@
                 <div class="form-actions">
                     <button type="button" class="btn" onclick="hideAddUserModal()">取消</button>
                     <button type="submit" class="btn btn-primary">添加用户</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Change Password Modal -->
+    <div class="modal" id="changePasswordModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">修改密码</h2>
+                <p class="modal-subtitle">为用户 <strong id="cpUsername"></strong> 设置新密码</p>
+            </div>
+            <form id="changePasswordForm" onsubmit="handleChangePassword(event)">
+                <input type="hidden" name="targetUsername" id="cpTargetUsername">
+                <div class="form-group">
+                    <label class="form-label">新密码</label>
+                    <input type="password" class="form-input" name="newPassword" placeholder="输入新密码" required minlength="4">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">确认密码</label>
+                    <input type="password" class="form-input" name="confirmPassword" placeholder="再次输入新密码" required minlength="4">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="hideChangePasswordModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">确认修改</button>
                 </div>
             </form>
         </div>
@@ -758,6 +787,11 @@
                         </div>
                     </div>
                     <div class="user-actions">
+                        <button class="btn"
+                                onclick="showChangePasswordModal('${user.username}')">
+                            <svg viewBox="0 0 16 16"><path d="M8 1C5.2 1 3 3.2 3 6v1.5H2.25A1.25 1.25 0 0 0 1 8.75v5A1.25 1.25 0 0 0 2.25 15h11.5A1.25 1.25 0 0 0 15 13.75v-5A1.25 1.25 0 0 0 13.75 7.5H13V6c0-2.8-2.2-5-5-5zm3.5 6.5h-7V6a3.5 3.5 0 1 1 7 0v1.5zM8 10a1.25 1.25 0 0 1 .625 2.334V13a.625.625 0 0 1-1.25 0v-.666A1.25 1.25 0 0 1 8 10z"/></svg>
+                            修改密码
+                        </button>
                         <button class="btn btn-danger"
                                 onclick="deleteUser('${user.username}')"
                                 ${isAdmin ? 'disabled' : ''}>
@@ -840,17 +874,72 @@
             }
         }
 
-        // Close modal on click outside
-        document.getElementById('addUserModal').addEventListener('click', (e) => {
-            if (e.target.classList.contains('modal')) {
-                hideAddUserModal();
+        // Change password modal
+        function showChangePasswordModal(username) {
+            document.getElementById('cpUsername').textContent = username;
+            document.getElementById('cpTargetUsername').value = username;
+            document.getElementById('changePasswordModal').classList.add('active');
+        }
+
+        function hideChangePasswordModal() {
+            document.getElementById('changePasswordModal').classList.remove('active');
+            document.getElementById('changePasswordForm').reset();
+        }
+
+        async function handleChangePassword(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const targetUsername = formData.get('targetUsername');
+            const newPassword = formData.get('newPassword');
+            const confirmPassword = formData.get('confirmPassword');
+
+            if (newPassword !== confirmPassword) {
+                showToast('两次输入的密码不一致', 'error');
+                return;
             }
+
+            try {
+                const res = await fetch(`/api/users/${encodeURIComponent(targetUsername)}/password`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newPassword }),
+                });
+
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || '修改失败');
+                }
+
+                showToast(`用户 ${targetUsername} 的密码已修改`);
+                hideChangePasswordModal();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
+
+        // Logout
+        async function handleLogout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+            } catch {}
+            window.location.href = '/login';
+        }
+
+        // Close modal on click outside
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target.classList.contains('modal')) {
+                    e.target.classList.remove('active');
+                }
+            });
         });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 hideAddUserModal();
+                hideChangePasswordModal();
             }
         });
 
