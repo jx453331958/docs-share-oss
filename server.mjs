@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { readdir, readFile, stat, writeFile, unlink } from 'fs/promises';
+import { readdir, readFile, stat, writeFile, unlink, access } from 'fs/promises';
 import { join, extname } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -14,30 +14,85 @@ function generateApiKey() {
 
 const PORT = process.env.PORT || 3457;
 const DOCS_DIR = join(import.meta.dirname, 'docs');
+const USERS_FILE = join(import.meta.dirname, 'users.json');
 const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || import.meta.dirname;
 
 // 访问鉴权配置
 const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
-const AUTH_USERS = parseAuthUsers(process.env.AUTH_USERS);
+
+// 用户数据（从文件加载或从环境变量初始化）
+let AUTH_USERS = new Map();
+let ADMIN_USER = null;
 
 // 首次启动时保存生成的 API Key
 const isFirstRun = !process.env.API_KEY;
 
+// 加载用户数据
+async function loadUsers() {
+  try {
+    await access(USERS_FILE);
+    const data = await readFile(USERS_FILE, 'utf-8');
+    const users = JSON.parse(data);
+    AUTH_USERS = new Map();
+    for (const [username, info] of Object.entries(users)) {
+      AUTH_USERS.set(username, info);
+      if (info.role === 'admin') {
+        ADMIN_USER = username;
+      }
+    }
+    console.log(`[Auth] Loaded ${AUTH_USERS.size} users from ${USERS_FILE}`);
+  } catch {
+    // 文件不存在，从环境变量初始化
+    AUTH_USERS = parseAuthUsers(process.env.AUTH_USERS);
+    // 保存到文件
+    await saveUsers();
+  }
+}
+
+// 保存用户数据
+async function saveUsers() {
+  const usersObj = {};
+  for (const [username, info] of AUTH_USERS) {
+    usersObj[username] = info;
+  }
+  await writeFile(USERS_FILE, JSON.stringify(usersObj, null, 2), 'utf-8');
+  console.log(`[Auth] Saved ${AUTH_USERS.size} users to ${USERS_FILE}`);
+}
+
 // 解析用户列表：格式 "user1:pass1,user2:pass2"
+// 兼容旧格式（仅密码）和新格式（带角色信息）
 function parseAuthUsers(usersStr) {
-  if (!usersStr) return new Map([['admin', 'admin']]);
+  if (!usersStr) {
+    const defaultUsers = new Map();
+    defaultUsers.set('admin', { password: 'admin', role: 'admin' });
+    ADMIN_USER = 'admin';
+    return defaultUsers;
+  }
 
   const users = new Map();
-  usersStr.split(',').forEach(pair => {
+  const pairs = usersStr.split(',');
+
+  pairs.forEach((pair, index) => {
     const [user, pass] = pair.split(':');
     if (user && pass) {
-      users.set(user.trim(), pass.trim());
+      const username = user.trim();
+      // 第一个用户是管理员
+      const role = index === 0 ? 'admin' : 'user';
+      users.set(username, { password: pass.trim(), role });
+      if (role === 'admin') {
+        ADMIN_USER = username;
+      }
     }
   });
 
-  return users.size > 0 ? users : new Map([['admin', 'admin']]);
+  if (users.size === 0) {
+    users.set('admin', { password: 'admin', role: 'admin' });
+    ADMIN_USER = 'admin';
+  }
+
+  return users;
 }
 
 const MIME = {
@@ -59,8 +114,9 @@ function requireAuth(req) {
 }
 
 // ── HTTP Basic Auth (前端访问鉴权) ──
+// 返回用户信息对象或 null
 function requireBasicAuth(req, res) {
-  if (!ENABLE_AUTH) return true;
+  if (!ENABLE_AUTH) return { username: 'anonymous', role: 'user' };
 
   const authHeader = req.headers.authorization;
 
@@ -87,7 +143,7 @@ function requireBasicAuth(req, res) {
       </body>
       </html>
     `);
-    return false;
+    return null;
   }
 
   // 解析 Basic Auth 凭证
@@ -97,9 +153,9 @@ function requireBasicAuth(req, res) {
     const [username, password] = credentials.split(':');
 
     // 验证用户名和密码
-    const validPassword = AUTH_USERS.get(username);
-    if (validPassword && validPassword === password) {
-      return true;
+    const userInfo = AUTH_USERS.get(username);
+    if (userInfo && userInfo.password === password) {
+      return { username, role: userInfo.role };
     }
 
     // 认证失败
@@ -124,13 +180,13 @@ function requireBasicAuth(req, res) {
       </body>
       </html>
     `);
-    return false;
+    return null;
   } catch (error) {
     res.writeHead(401, {
       'WWW-Authenticate': 'Basic realm="Docs Share - Protected Area"'
     });
     res.end('Unauthorized');
-    return false;
+    return null;
   }
 }
 
@@ -202,10 +258,11 @@ async function handleApiDocs(req, res) {
   // 1. Bearer Token（用于 API 调用）
   // 2. Basic Auth（用于前端访问）
   const hasApiAuth = requireAuth(req);
-  const hasBasicAuth = !ENABLE_AUTH || requireBasicAuth(req, res);
-
-  if (!hasApiAuth && !hasBasicAuth) {
-    return; // requireBasicAuth 已经返回 401
+  if (!hasApiAuth) {
+    const user = requireBasicAuth(req, res);
+    if (!user) {
+      return; // requireBasicAuth 已经返回 401
+    }
   }
 
   const files = await readdir(DOCS_DIR);
@@ -297,7 +354,7 @@ async function handleWebhook(req, res) {
 
   try {
     console.log('[Webhook] Received push event, pulling latest changes...');
-    const { stdout, stderr } = await execAsync('git pull', { cwd: GIT_REPO_PATH });
+    const { stdout, stderr} = await execAsync('git pull', { cwd: GIT_REPO_PATH });
     console.log('[Webhook] Git pull output:', stdout);
     if (stderr) console.error('[Webhook] Git pull stderr:', stderr);
 
@@ -310,9 +367,98 @@ async function handleWebhook(req, res) {
   }
 }
 
+// ── GET /api/users - 获取用户列表（仅管理员）──
+async function handleGetUsers(req, res) {
+  const user = requireBasicAuth(req, res);
+  if (!user) return;
+
+  if (user.role !== 'admin') {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: Admin access required' }));
+    return;
+  }
+
+  const users = [];
+  for (const [username, info] of AUTH_USERS) {
+    users.push({ username, role: info.role });
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(users));
+}
+
+// ── POST /api/users - 添加用户（仅管理员）──
+async function handleAddUser(req, res) {
+  const user = requireBasicAuth(req, res);
+  if (!user) return;
+
+  if (user.role !== 'admin') {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: Admin access required' }));
+    return;
+  }
+
+  try {
+    const body = await parseBody(req);
+    const { username, password } = body;
+
+    if (!username || !password) {
+      throw new Error('Username and password are required');
+    }
+
+    if (AUTH_USERS.has(username)) {
+      throw new Error('User already exists');
+    }
+
+    AUTH_USERS.set(username, { password, role: 'user' });
+    await saveUsers();
+
+    console.log(`[Auth] User added: ${username}`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, message: 'User added successfully' }));
+  } catch (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
+// ── DELETE /api/users/:username - 删除用户（仅管理员）──
+async function handleDeleteUser(req, res, username) {
+  const user = requireBasicAuth(req, res);
+  if (!user) return;
+
+  if (user.role !== 'admin') {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: Admin access required' }));
+    return;
+  }
+
+  try {
+    if (!AUTH_USERS.has(username)) {
+      throw new Error('User not found');
+    }
+
+    const userInfo = AUTH_USERS.get(username);
+    if (userInfo.role === 'admin') {
+      throw new Error('Cannot delete admin user');
+    }
+
+    AUTH_USERS.delete(username);
+    await saveUsers();
+
+    console.log(`[Auth] User deleted: ${username}`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, message: 'User deleted successfully' }));
+  } catch (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
 async function serveStatic(req, res) {
   // 前端访问需要 Basic Auth 鉴权
-  if (!requireBasicAuth(req, res)) {
+  const user = requireBasicAuth(req, res);
+  if (!user) {
     return;
   }
 
@@ -374,11 +520,30 @@ const server = createServer(async (req, res) => {
     return handleWebhook(req, res);
   }
 
+  // User management API
+  if (pathname === '/api/users' && req.method === 'GET') {
+    return handleGetUsers(req, res);
+  }
+
+  if (pathname === '/api/users' && req.method === 'POST') {
+    return handleAddUser(req, res);
+  }
+
+  if (pathname.startsWith('/api/users/') && req.method === 'DELETE') {
+    const username = decodeURIComponent(pathname.replace('/api/users/', ''));
+    return handleDeleteUser(req, res, username);
+  }
+
   // Static files
   return serveStatic(req, res);
 });
 
 server.listen(PORT, '0.0.0.0', async () => {
+  // 加载用户数据
+  if (ENABLE_AUTH) {
+    await loadUsers();
+  }
+
   console.log(`\n📚 Docs Share Server`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`🌐 Server:    http://0.0.0.0:${PORT}`);
@@ -418,6 +583,11 @@ ENABLE_WEBHOOK=false
   console.log(`  DELETE /api/docs/:file    - Delete document (requires auth)`);
   if (ENABLE_WEBHOOK) {
     console.log(`  POST   /api/webhook       - Git webhook handler`);
+  }
+  if (ENABLE_AUTH) {
+    console.log(`  GET    /api/users         - List users (admin only)`);
+    console.log(`  POST   /api/users         - Add user (admin only)`);
+    console.log(`  DELETE /api/users/:user   - Delete user (admin only)`);
   }
   console.log();
 });

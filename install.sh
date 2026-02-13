@@ -332,15 +332,17 @@ configure_auth_docker() {
     fi
 
     echo ""
-    info "配置登录用户"
+    info "配置管理员账号"
+    echo "  - 管理员可以通过 Web 界面添加更多用户"
+    echo "  - 其他用户登录后只能查看文档"
     echo ""
 
-    # 单用户模式
-    read -p "用户名 [默认: admin]: " auth_user
+    # 管理员账号配置
+    read -p "管理员用户名 [默认: admin]: " auth_user
     auth_user=${auth_user:-admin}
 
     # 密码输入（不回显）
-    read -sp "密码: " auth_pass
+    read -sp "管理员密码: " auth_pass
     echo ""
 
     if [ -z "$auth_pass" ]; then
@@ -737,15 +739,17 @@ EOF
     fi
 
     echo ""
-    info "配置登录用户"
+    info "配置管理员账号"
+    echo "  - 管理员可以通过 Web 界面添加更多用户"
+    echo "  - 其他用户登录后只能查看文档"
     echo ""
 
-    # 单用户模式
-    read -p "用户名 [默认: admin]: " auth_user
+    # 管理员账号配置
+    read -p "管理员用户名 [默认: admin]: " auth_user
     auth_user=${auth_user:-admin}
 
     # 密码输入（不回显）
-    read -sp "密码: " auth_pass
+    read -sp "管理员密码: " auth_pass
     echo ""
 
     if [ -z "$auth_pass" ]; then
@@ -764,15 +768,17 @@ EOF
     success "鉴权配置完成"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🔒 登录凭证"
+    echo "🔒 管理员凭证"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "   用户名: $auth_user"
     echo "   密码:   $auth_pass"
+    echo "   权限:   管理员（可添加其他用户）"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    warning "请妥善保管登录凭证"
+    warning "请妥善保管管理员凭证"
     echo ""
-    info "添加更多用户: 编辑 $INSTALL_DIR/.env"
-    info "格式: AUTH_USERS=user1:pass1,user2:pass2"
+    info "添加更多用户:"
+    echo "  1. 使用管理员账号登录文档站"
+    echo "  2. 在 Web 界面的用户管理中添加"
     echo ""
 }
 

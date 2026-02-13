@@ -7,7 +7,8 @@
 ### 核心功能
 - **零配置** — 把 `.md` 文件放进 `docs/` 目录就完事了，自动发现、自动生成目录
 - **零依赖** — 纯 Node.js 原生模块，无 npm 依赖
-- **访问鉴权** — 内置 HTTP Basic Auth，保护私有文档，支持多用户
+- **访问鉴权** — 内置 HTTP Basic Auth，保护私有文档，Web 端用户管理
+- **用户管理** — 管理员通过 Web 界面添加/删除用户，无需编辑配置文件
 - **暗色主题** — 精心设计的深色界面，JetBrains Mono + Noto Sans SC 字体
 - **响应式** — 桌面端侧边栏可收起展开，移动端自适应
 - **实时搜索** — 支持文档标题和内容搜索，实时过滤
@@ -253,6 +254,53 @@ pm2 restart docs-share
 # Docker 模式
 cd ~/docs-share-data && docker compose restart
 ```
+
+### 用户管理（Web 界面）
+
+管理员可以通过 Web 界面管理用户，无需手动编辑配置文件：
+
+#### 添加用户
+
+```bash
+# 方式 1: Web 界面（推荐）
+1. 使用管理员账号登录文档站
+2. 访问 /users.html 或点击用户管理菜单
+3. 输入新用户名和密码
+4. 点击"添加用户"
+
+# 方式 2: API 调用
+curl -X POST http://localhost:3457/api/users \
+  -u admin:password \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"pass123"}'
+```
+
+#### 删除用户
+
+```bash
+# Web 界面
+1. 在用户列表中找到要删除的用户
+2. 点击"删除"按钮
+
+# API 调用
+curl -X DELETE http://localhost:3457/api/users/alice \
+  -u admin:password
+```
+
+#### 查看用户列表
+
+```bash
+# API 调用
+curl http://localhost:3457/api/users \
+  -u admin:password
+```
+
+**权限说明：**
+- **管理员** — 可以添加/删除用户，查看所有文档
+- **普通用户** — 只能查看文档，无法管理用户
+- 管理员账号在安装时配置，无法通过 Web 界面删除
+
+---
 
 ### 禁用鉴权（改为公开访问）
 
