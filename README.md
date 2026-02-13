@@ -15,10 +15,9 @@
 - **Docker 友好** — 一行命令部署，支持 amd64/arm64
 
 ### 远程更新
-- **REST API** — 支持上传、删除文档的 HTTP API
-- **CLI 工具** — 命令行快速上传文档到服务器
+- **REST API** — HTTP API 上传、删除文档，支持 Bearer Token 认证
 - **Git Webhook** — 推送到仓库自动更新服务器文档
-- **AI 集成** — 方便 AI 自动发布生成的文档
+- **AI 集成** — 简单的 API 调用，方便 AI 自动发布文档
 
 ## 📸 截图
 
@@ -146,52 +145,7 @@ ENABLE_WEBHOOK=true
 
 ## 📡 远程更新文档
 
-### 方式一：CLI 工具（推荐）
-
-#### 1. 创建配置文件
-
-在项目目录或 `~/.docsrc.json`：
-
-```json
-{
-  "server": "http://your-server:3457",
-  "apiKey": "your-secret-api-key-here"
-}
-```
-
-或使用命令初始化：
-
-```bash
-npx docs-share init
-```
-
-#### 2. 上传文档
-
-```bash
-# 上传单个文件
-npx docs-share upload my-doc.md
-
-# 批量上传
-npx docs-share upload *.md
-
-# 上传目录下所有文档
-npx docs-share upload docs/*.md
-```
-
-#### 3. 管理文档
-
-```bash
-# 列出所有文档
-npx docs-share list
-
-# 删除文档
-npx docs-share delete old-doc.md
-
-# 查看帮助
-npx docs-share help
-```
-
-### 方式二：REST API
+### REST API
 
 #### 上传文档
 
@@ -218,7 +172,7 @@ curl -X DELETE http://your-server:3457/api/docs/my-doc.md \
 curl http://your-server:3457/api/docs
 ```
 
-### 方式三：Git Webhook 自动部署
+### Git Webhook 自动部署
 
 #### 1. 启用 Webhook
 
@@ -261,11 +215,11 @@ curl -X POST http://your-server:3457/api/webhook
 
 ## 🤖 AI 集成示例
 
-### 场景：AI 生成文档后自动发布
+### JavaScript/Node.js
 
 ```javascript
-// AI 写完文档后，使用 API 自动上传
-const uploadDoc = async (filename, content) => {
+// AI 生成文档后自动上传
+async function uploadDoc(filename, content) {
   const response = await fetch('http://your-server:3457/api/docs', {
     method: 'POST',
     headers: {
@@ -274,24 +228,40 @@ const uploadDoc = async (filename, content) => {
     },
     body: JSON.stringify({ filename, content }),
   });
+  return response.json();
+}
 
-  const result = await response.json();
-  console.log('文档已发布:', result);
-};
+// 使用 Claude 4.6 生成并上传
+import Anthropic from '@anthropic-ai/sdk';
 
-// 使用示例
-const aiGeneratedContent = `# AI 生成的技术文档
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-## 概述
-...
-`;
+async function generateAndUpload(topic) {
+  // 1. AI 生成内容
+  const message = await anthropic.messages.create({
+    model: 'claude-opus-4-6',
+    max_tokens: 8192,
+    messages: [{
+      role: 'user',
+      content: `写一篇关于${topic}的技术文档，使用 Markdown 格式`
+    }],
+  });
 
-await uploadDoc('ai-generated-doc.md', aiGeneratedContent);
+  const content = message.content[0].text;
+
+  // 2. 自动上传
+  const filename = `${topic.replace(/\s+/g, '-')}.md`;
+  return uploadDoc(filename, content);
+}
+
+// 执行
+await generateAndUpload('React Hooks 详解');
 ```
 
-### Python 示例
+### Python
 
 ```python
+import anthropic
 import requests
 
 def upload_doc(server, api_key, filename, content):
@@ -302,30 +272,43 @@ def upload_doc(server, api_key, filename, content):
     )
     return response.json()
 
-# AI 生成文档后上传
-content = """# AI 技术文档
+def generate_and_upload(topic):
+    # 1. AI 生成内容
+    client = anthropic.Anthropic(api_key='your-anthropic-key')
+    message = client.messages.create(
+        model='claude-opus-4-6',
+        max_tokens=8192,
+        messages=[{
+            'role': 'user',
+            'content': f'写一篇关于{topic}的技术文档，使用 Markdown 格式'
+        }]
+    )
+    content = message.content[0].text
 
-## 简介
-...
-"""
+    # 2. 自动上传
+    filename = f'{topic.replace(" ", "-")}.md'
+    return upload_doc('http://localhost:3457', 'your-api-key', filename, content)
 
-result = upload_doc(
-    'http://your-server:3457',
-    'your-api-key',
-    'ai-doc.md',
-    content
-)
+# 执行
+result = generate_and_upload('FastAPI 最佳实践')
 print('发布成功:', result)
 ```
 
-### 使用 CLI（最简单）
+### Shell 脚本
 
 ```bash
-# AI 生成文档保存为 ai-doc.md
-echo "# AI Generated\n\nContent..." > ai-doc.md
+#!/bin/bash
+# AI 生成并上传文档
 
-# 一键上传
-npx docs-share upload ai-doc.md
+API_KEY="your-api-key"
+SERVER="http://localhost:3457"
+FILENAME="$1"
+CONTENT="$2"
+
+curl -X POST "$SERVER/api/docs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"filename\":\"$FILENAME\",\"content\":\"$CONTENT\"}"
 ```
 
 ## 🏗️ GitHub Actions
@@ -352,12 +335,12 @@ git push origin v1.0.0
 ```
 docs-share/
 ├── server.mjs               # 服务端（零依赖，纯 Node.js）
-├── cli.mjs                  # CLI 工具
+├── install.sh               # 一键安装脚本
 ├── docs/
 │   ├── index.html           # 前端界面（搜索、刷新等功能）
 │   └── *.md                 # 你的文档（放这里就行）
+├── examples/                # 示例代码（AI 集成等）
 ├── .env.example             # 环境变量示例
-├── .docsrc.example.json     # CLI 配置示例
 ├── webhook-setup.sh         # Webhook 配置脚本
 ├── Dockerfile
 ├── docker-compose.yml
@@ -373,21 +356,22 @@ docs-share/
 
 ```bash
 # 1. 部署到服务器
-docker run -d -p 3457:3457 -v ~/my-docs:/app/docs ghcr.io/jx453331958/docs-share-oss:latest
+docker run -d -p 3457:3457 \
+  -v ~/my-docs:/app/docs \
+  -e API_KEY=$(openssl rand -base64 32) \
+  ghcr.io/jx453331958/docs-share-oss:latest
 
-# 2. 本地配置 CLI
-cat > .docsrc.json << EOF
-{
-  "server": "http://your-server:3457",
-  "apiKey": "your-api-key"
-}
-EOF
+# 2. 直接放置文档
+cp my-note.md ~/my-docs/
 
-# 3. 随时上传新笔记
-npx docs-share upload today-learning.md
+# 或通过 API 上传
+curl -X POST http://localhost:3457/api/docs \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"note.md","content":"# My Note\n\nContent..."}'
 ```
 
-### 场景 2：团队文档站 + Git
+### 场景 2：团队文档站 + Git Webhook
 
 ```bash
 # 1. 文档存储在 Git 仓库
@@ -413,9 +397,19 @@ git push
 # AI 生成文档脚本
 cat > publish-ai-doc.sh << 'EOF'
 #!/bin/bash
-# AI 生成的文档保存到 output.md
-# 然后自动上传
-npx docs-share upload output.md
+API_KEY="your-api-key"
+SERVER="http://localhost:3457"
+
+# AI 生成的文档
+CONTENT=$(cat ai-output.md)
+FILENAME="ai-generated-$(date +%Y%m%d).md"
+
+# 上传到文档站
+curl -X POST "$SERVER/api/docs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"filename\":\"$FILENAME\",\"content\":$(echo "$CONTENT" | jq -Rs .)}"
+
 echo "AI 文档已发布到文档站"
 EOF
 

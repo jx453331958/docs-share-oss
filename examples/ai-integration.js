@@ -6,24 +6,17 @@
  * 演示如何让 AI 生成的内容自动发布到 Docs Share
  */
 
-import { readFile } from 'fs/promises';
-import { join } from 'path';
-import { homedir } from 'os';
-
 // ── 配置 ──
-const CONFIG_PATHS = [
-  '.docsrc.json',
-  join(homedir(), '.docsrc.json'),
-];
+const CONFIG = {
+  server: process.env.DOCS_SERVER || 'http://localhost:3457',
+  apiKey: process.env.DOCS_API_KEY || 'dev-key-change-in-production',
+};
 
-async function loadConfig() {
-  for (const path of CONFIG_PATHS) {
-    try {
-      const content = await readFile(path, 'utf-8');
-      return JSON.parse(content);
-    } catch {}
+function loadConfig() {
+  if (!CONFIG.apiKey || CONFIG.apiKey === 'dev-key-change-in-production') {
+    console.warn('⚠️  Warning: Using default API key. Set DOCS_API_KEY environment variable.');
   }
-  throw new Error('配置文件未找到。请运行: npx docs-share init');
+  return CONFIG;
 }
 
 // ── 上传文档到 Docs Share ──
@@ -105,9 +98,8 @@ async function main() {
 
   try {
     // 1. 加载配置
-    console.log('📝 加载配置...');
-    const config = await loadConfig();
-    console.log(`✓ 服务器: ${config.server}\n`);
+    const config = loadConfig();
+    console.log(`📝 服务器: ${config.server}\n`);
 
     // 2. AI 生成内容
     const topic = process.argv[2] || 'JavaScript 异步编程';
@@ -138,7 +130,13 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
 用法:
   node ai-integration.js [主题]
 
+环境变量:
+  DOCS_SERVER     - 文档服务器地址 (默认: http://localhost:3457)
+  DOCS_API_KEY    - API 认证密钥 (必需)
+  ANTHROPIC_API_KEY - Anthropic API 密钥 (可选)
+
 示例:
+  export DOCS_API_KEY="your-api-key"
   node ai-integration.js "React Hooks"
   node ai-integration.js "Docker 容器化"
   node ai-integration.js "数据库优化"

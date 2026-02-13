@@ -208,16 +208,7 @@ EOF
     info "文档目录: $DATA_DIR/docs"
     info "API Key: $API_KEY"
     echo ""
-
-    # 创建 CLI 配置
-    cat > "$HOME/.docsrc.json" << EOF
-{
-  "server": "http://localhost:3457",
-  "apiKey": "$API_KEY"
-}
-EOF
-
-    success "CLI 配置已创建: ~/.docsrc.json"
+    warning "请妥善保管 API Key，用于远程上传文档"
     echo ""
 
     # 启动
@@ -314,7 +305,7 @@ EOF
 
     success "配置完成"
     info "API Key: $API_KEY"
-    info "CLI 配置: ~/.docsrc.json"
+    warning "请妥善保管 API Key，用于 REST API 调用"
 }
 
 # 更新
@@ -476,10 +467,9 @@ check_status() {
 
     info "文档目录: $DATA_DIR/docs"
 
-    if [ -f "$HOME/.docsrc.json" ]; then
-        success "CLI 已配置: ~/.docsrc.json"
-    else
-        warning "CLI 未配置"
+    if [ -f "$INSTALL_DIR/.env" ] || [ -f "$DATA_DIR/.env" ]; then
+        success "环境配置已完成"
+        info "查看 API Key: cat $INSTALL_DIR/.env 或 cat $DATA_DIR/.env"
     fi
 
     echo ""
@@ -517,11 +507,8 @@ uninstall() {
         info "保留数据目录: $DATA_DIR"
     fi
 
-    # 删除 CLI 配置
-    if [ -f "$HOME/.docsrc.json" ]; then
-        rm "$HOME/.docsrc.json"
-        success "已删除 CLI 配置"
-    fi
+    # 清理完成
+    success "清理完成"
 
     # PM2
     if command -v pm2 &> /dev/null && pm2 list | grep -q "docs-share"; then

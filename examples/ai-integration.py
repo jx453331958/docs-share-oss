@@ -15,18 +15,16 @@ import requests
 
 
 def load_config():
-    """加载配置文件"""
-    config_paths = [
-        '.docsrc.json',
-        os.path.join(os.path.expanduser('~'), '.docsrc.json'),
-    ]
+    """加载配置"""
+    config = {
+        'server': os.getenv('DOCS_SERVER', 'http://localhost:3457'),
+        'apiKey': os.getenv('DOCS_API_KEY', 'dev-key-change-in-production'),
+    }
 
-    for path in config_paths:
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                return json.load(f)
+    if not config['apiKey'] or config['apiKey'] == 'dev-key-change-in-production':
+        print('⚠️  Warning: Using default API key. Set DOCS_API_KEY environment variable.')
 
-    raise FileNotFoundError('配置文件未找到。请运行: npx docs-share init')
+    return config
 
 
 def publish_doc(config, filename, content):
@@ -127,9 +125,8 @@ def main():
 
     try:
         # 1. 加载配置
-        print('📝 加载配置...')
         config = load_config()
-        print(f"✓ 服务器: {config['server']}\n")
+        print(f"📝 服务器: {config['server']}\n")
 
         # 2. AI 生成内容
         topic = sys.argv[1] if len(sys.argv) > 1 else 'Python 异步编程'
@@ -159,7 +156,13 @@ def print_help():
 用法:
   python ai-integration.py [主题]
 
+环境变量:
+  DOCS_SERVER       - 文档服务器地址 (默认: http://localhost:3457)
+  DOCS_API_KEY      - API 认证密钥 (必需)
+  ANTHROPIC_API_KEY - Anthropic API 密钥 (可选)
+
 示例:
+  export DOCS_API_KEY="your-api-key"
   python ai-integration.py "FastAPI 教程"
   python ai-integration.py "机器学习入门"
   python ai-integration.py "数据分析最佳实践"
