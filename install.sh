@@ -423,7 +423,12 @@ configure_webhook_docker() {
     fi
 
     echo ""
-    read -p "请输入 Git 仓库地址 (如: yourname/my-docs): " REPO < /dev/tty
+    echo "请输入 Git 仓库地址，支持以下格式："
+    echo "  • yourname/my-docs"
+    echo "  • https://github.com/yourname/my-docs"
+    echo "  • git@github.com:yourname/my-docs.git"
+    echo ""
+    read -p "仓库地址: " REPO < /dev/tty
 
     if [ -z "$REPO" ]; then
         warning "未输入仓库地址，跳过 Webhook 配置"
@@ -606,7 +611,12 @@ configure_webhook() {
     fi
 
     echo ""
-    read -p "请输入 Git 仓库地址 (如: yourname/my-docs): " REPO < /dev/tty
+    echo "请输入 Git 仓库地址，支持以下格式："
+    echo "  • yourname/my-docs"
+    echo "  • https://github.com/yourname/my-docs"
+    echo "  • git@github.com:yourname/my-docs.git"
+    echo ""
+    read -p "仓库地址: " REPO < /dev/tty
 
     if [ -z "$REPO" ]; then
         warning "未输入仓库地址，跳过 Webhook 配置"
