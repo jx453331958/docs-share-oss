@@ -17,8 +17,9 @@ NC='\033[0m' # No Color
 # 版本信息
 VERSION="2.0.0"
 REPO="jx453331958/docs-share-oss"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.docs-share}"
-DATA_DIR="${DATA_DIR:-$HOME/docs-share-data}"
+# 默认安装路径（可通过环境变量覆盖）
+INSTALL_DIR="${INSTALL_DIR:-./install}"
+DATA_DIR="${DATA_DIR:-./data}"
 
 # 打印带颜色的消息
 info() { echo -e "${BLUE}ℹ${NC} $1"; }
@@ -99,31 +100,26 @@ install() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     info "选择安装位置："
-    echo "  1) 标准位置 - $HOME/.docs-share 和 $HOME/docs-share-data（推荐）"
-    echo "  2) 当前目录 - $(pwd)/install 和 $(pwd)/data"
-    echo "  3) 自定义路径"
+    echo "  1) 当前目录 - $(pwd)/install 和 $(pwd)/data（推荐）"
+    echo "  2) 自定义路径"
     echo ""
-    read -p "请选择 [1-3, 默认 1]: " path_choice < /dev/tty
+    read -p "请选择 [1-2, 默认 1]: " path_choice < /dev/tty
 
     case ${path_choice:-1} in
         1)
-            INSTALL_DIR="$HOME/.docs-share"
-            DATA_DIR="$HOME/docs-share-data"
-            ;;
-        2)
             INSTALL_DIR="$(pwd)/install"
             DATA_DIR="$(pwd)/data"
             ;;
-        3)
+        2)
             echo ""
             read -p "安装目录 (程序文件): " custom_install_dir < /dev/tty
             read -p "数据目录 (文档和配置): " custom_data_dir < /dev/tty
-            INSTALL_DIR="${custom_install_dir:-$HOME/.docs-share}"
-            DATA_DIR="${custom_data_dir:-$HOME/docs-share-data}"
+            INSTALL_DIR="${custom_install_dir:-$(pwd)/install}"
+            DATA_DIR="${custom_data_dir:-$(pwd)/data}"
             ;;
         *)
-            INSTALL_DIR="$HOME/.docs-share"
-            DATA_DIR="$HOME/docs-share-data"
+            INSTALL_DIR="$(pwd)/install"
+            DATA_DIR="$(pwd)/data"
             ;;
     esac
 
