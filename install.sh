@@ -627,21 +627,39 @@ EOF
     fi
     webhook_port=${webhook_port:-3457}
 
-    # 尝试获取公网 IP 或主机名
-    local server_addr="your-server"
+    # 尝试自动检测服务器地址
+    local server_addr=""
     if command -v curl &> /dev/null; then
-        local public_ip=$(curl -s --max-time 2 ifconfig.me 2>/dev/null || curl -s --max-time 2 icanhazip.com 2>/dev/null)
-        if [ -n "$public_ip" ]; then
-            server_addr="$public_ip"
+        local detected_ip=$(curl -s --max-time 3 ifconfig.me 2>/dev/null || curl -s --max-time 3 icanhazip.com 2>/dev/null || curl -s --max-time 3 api.ipify.org 2>/dev/null)
+        # 验证是否为有效 IP 地址（IPv4 或 IPv6）
+        if echo "$detected_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^([0-9a-fA-F:]+)$'; then
+            server_addr="$detected_ip"
         fi
     fi
-    if [ "$server_addr" = "your-server" ] && [ -n "$(hostname -f 2>/dev/null)" ]; then
-        server_addr="$(hostname -f)"
+
+    # 询问用户外网访问地址
+    echo ""
+    info "请输入服务器的外网访问地址（域名或 IP）"
+    echo ""
+    if [ -n "$server_addr" ]; then
+        echo -e "自动检测到: ${GREEN}$server_addr${NC}"
+        read -p "直接回车使用检测值，或输入自定义地址: " custom_addr < /dev/tty
+        server_addr="${custom_addr:-$server_addr}"
+    else
+        warning "未能自动检测到公网地址"
+        read -p "请输入外网访问地址（域名/IP）: " custom_addr < /dev/tty
+        server_addr="${custom_addr:-your-server}"
     fi
 
+    echo ""
+    success "Webhook URL: http://${server_addr}:${webhook_port}/api/webhook"
+    echo ""
+
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "📝 下一步：配置 GitHub Webhook"
+    echo "📝 稍后配置 GitHub Webhook（服务启动后）"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    info "等服务启动完成后，按以下步骤配置："
     echo ""
     echo "1. 打开仓库: https://github.com/$REPO/settings/hooks"
     echo "2. 点击 Add webhook"
@@ -649,13 +667,6 @@ EOF
     echo "4. Content type: application/json"
     echo "5. Events: Just the push event"
     echo "6. 点击 Add webhook"
-    echo ""
-    if [ "$server_addr" != "your-server" ]; then
-        success "已自动检测到服务器地址: $server_addr"
-        info "请确认该地址可从外网访问，如不正确请手动修改"
-    else
-        warning "无法自动检测服务器地址，请替换 your-server 为实际域名或 IP"
-    fi
     echo ""
     info "详细配置见: cat WEBHOOK-GUIDE.md"
     echo ""
@@ -858,21 +869,39 @@ EOF
     fi
     webhook_port=${webhook_port:-3457}
 
-    # 尝试获取公网 IP 或主机名
-    local server_addr="your-server"
+    # 尝试自动检测服务器地址
+    local server_addr=""
     if command -v curl &> /dev/null; then
-        local public_ip=$(curl -s --max-time 2 ifconfig.me 2>/dev/null || curl -s --max-time 2 icanhazip.com 2>/dev/null)
-        if [ -n "$public_ip" ]; then
-            server_addr="$public_ip"
+        local detected_ip=$(curl -s --max-time 3 ifconfig.me 2>/dev/null || curl -s --max-time 3 icanhazip.com 2>/dev/null || curl -s --max-time 3 api.ipify.org 2>/dev/null)
+        # 验证是否为有效 IP 地址（IPv4 或 IPv6）
+        if echo "$detected_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^([0-9a-fA-F:]+)$'; then
+            server_addr="$detected_ip"
         fi
     fi
-    if [ "$server_addr" = "your-server" ] && [ -n "$(hostname -f 2>/dev/null)" ]; then
-        server_addr="$(hostname -f)"
+
+    # 询问用户外网访问地址
+    echo ""
+    info "请输入服务器的外网访问地址（域名或 IP）"
+    echo ""
+    if [ -n "$server_addr" ]; then
+        echo -e "自动检测到: ${GREEN}$server_addr${NC}"
+        read -p "直接回车使用检测值，或输入自定义地址: " custom_addr < /dev/tty
+        server_addr="${custom_addr:-$server_addr}"
+    else
+        warning "未能自动检测到公网地址"
+        read -p "请输入外网访问地址（域名/IP）: " custom_addr < /dev/tty
+        server_addr="${custom_addr:-your-server}"
     fi
 
+    echo ""
+    success "Webhook URL: http://${server_addr}:${webhook_port}/api/webhook"
+    echo ""
+
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "📝 下一步：配置 GitHub Webhook"
+    echo "📝 稍后配置 GitHub Webhook（服务启动后）"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    info "等服务启动完成后，按以下步骤配置："
     echo ""
     echo "1. 打开仓库: https://github.com/$REPO/settings/hooks"
     echo "2. 点击 Add webhook"
@@ -880,13 +909,6 @@ EOF
     echo "4. Content type: application/json"
     echo "5. Events: Just the push event"
     echo "6. 点击 Add webhook"
-    echo ""
-    if [ "$server_addr" != "your-server" ]; then
-        success "已自动检测到服务器地址: $server_addr"
-        info "请确认该地址可从外网访问，如不正确请手动修改"
-    else
-        warning "无法自动检测服务器地址，请替换 your-server 为实际域名或 IP"
-    fi
     echo ""
     info "详细配置见: cat WEBHOOK-GUIDE.md"
     echo ""
