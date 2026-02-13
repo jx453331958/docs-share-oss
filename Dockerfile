@@ -6,9 +6,9 @@ LABEL org.opencontainers.image.description="零配置 Markdown 文档站"
 WORKDIR /app
 
 COPY package.json server.mjs ./
-COPY docs/index.html ./docs/index.html
+COPY docs ./docs
 
-# docs 目录挂载用户自己的文档
+# docs 目录可以挂载用户自己的文档覆盖
 VOLUME /app/docs
 
 EXPOSE 3457

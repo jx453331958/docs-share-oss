@@ -502,6 +502,13 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Health check endpoint (no auth required)
+  if (pathname === '/health' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', timestamp: Date.now() }));
+    return;
+  }
+
   // API Routes
   if (pathname === '/api/docs' && req.method === 'GET') {
     return handleApiDocs(req, res);
