@@ -22,8 +22,8 @@ jobs:
 
       - name: Start server & health check
         run: |
-          node server.mjs &
-          sleep 2
+          ENABLE_AUTH=false node server.mjs &
+          sleep 3
           curl -f http://localhost:3457/ || exit 1
           curl -f http://localhost:3457/api/docs || exit 1
           echo "✅ Server healthy on Node ${{ matrix.node-version }}"
@@ -38,8 +38,8 @@ jobs:
 
       - name: Run & health check
         run: |
-          docker run -d -p 3457:3457 -v $PWD/docs:/app/docs --name test docs-share:test
-          sleep 2
+          docker run -d -p 3457:3457 -e ENABLE_AUTH=false -v $PWD/docs:/app/docs --name test docs-share:test
+          sleep 5
           curl -f http://localhost:3457/ || exit 1
           curl -f http://localhost:3457/api/docs || exit 1
           echo "✅ Docker image healthy"
