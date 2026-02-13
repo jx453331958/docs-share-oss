@@ -217,6 +217,9 @@ EOF
     info "查看配置: cat $DATA_DIR/docker-compose.yml"
     echo ""
 
+    # 配置 Webhook（Docker 模式）
+    configure_webhook_docker
+
     # 启动
     read -p "是否现在启动服务？[Y/n] " start_now
     if [[ "$start_now" != "n" && "$start_now" != "N" ]]; then
@@ -273,7 +276,171 @@ install_pm2() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
-# 配置 Git Webhook（包含 SSH 认证）
+# 配置 Git Webhook（Docker 模式）
+configure_webhook_docker() {
+    echo ""
+    info "是否需要配置 Git Webhook 自动部署？"
+    echo ""
+    echo "功能说明："
+    echo "  - 将文档托管在 Git 仓库（GitHub/GitLab）"
+    echo "  - 推送代码后，服务器自动执行 git pull 更新文档"
+    echo ""
+    read -p "是否启用 Webhook？[y/N] " enable_webhook
+
+    if [[ "$enable_webhook" != "y" && "$enable_webhook" != "Y" ]]; then
+        info "跳过 Webhook 配置"
+        return
+    fi
+
+    echo ""
+    read -p "请输入 Git 仓库地址 (如: yourname/my-docs): " REPO
+
+    if [ -z "$REPO" ]; then
+        warning "未输入仓库地址，跳过 Webhook 配置"
+        return
+    fi
+
+    echo ""
+    read -p "这是私有仓库吗？[y/N] " is_private
+
+    # 文档仓库路径
+    DOCS_REPO_PATH="$HOME/${REPO##*/}"
+
+    # 询问文档在仓库中的位置
+    echo ""
+    info "文档文件在仓库中的位置："
+    echo "  1) 仓库根目录（所有 .md 文件在根目录）"
+    echo "  2) docs/ 子目录（.md 文件在 docs/ 文件夹内）"
+    echo "  3) 其他自定义路径"
+    read -p "请选择 [1-3, 默认 1]: " docs_location
+
+    case ${docs_location:-1} in
+        1) DOCS_SUBDIR="." ;;
+        2) DOCS_SUBDIR="docs" ;;
+        3)
+            read -p "请输入文档所在子目录（如: documents）: " custom_dir
+            DOCS_SUBDIR="${custom_dir:-.}"
+            ;;
+        *) DOCS_SUBDIR="." ;;
+    esac
+
+    # 如果是私有仓库，配置 SSH Deploy Key
+    if [[ "$is_private" == "y" || "$is_private" == "Y" ]]; then
+        info "检测到私有仓库，需要配置 SSH Deploy Key"
+        echo ""
+
+        setup_github_ssh "$REPO"
+
+        # 使用 SSH 克隆仓库
+        if [ ! -d "$DOCS_REPO_PATH" ]; then
+            info "克隆私有仓库..."
+            HOST_NAME="github-${REPO//\//-}"
+            git clone "$HOST_NAME:$REPO.git" "$DOCS_REPO_PATH" || {
+                error "克隆失败，请检查 SSH 配置"
+                return
+            }
+            success "仓库克隆完成"
+        fi
+    else
+        # 公开仓库，直接使用 HTTPS 克隆
+        if [ ! -d "$DOCS_REPO_PATH" ]; then
+            info "克隆公开仓库..."
+            git clone "https://github.com/$REPO.git" "$DOCS_REPO_PATH" || {
+                error "克隆失败"
+                return
+            }
+            success "仓库克隆完成"
+        fi
+    fi
+
+    # 确定实际文档目录
+    if [ "$DOCS_SUBDIR" = "." ]; then
+        ACTUAL_DOCS_DIR="$DOCS_REPO_PATH"
+    else
+        ACTUAL_DOCS_DIR="$DOCS_REPO_PATH/$DOCS_SUBDIR"
+    fi
+
+    # 检查文档目录是否存在
+    if [ ! -d "$ACTUAL_DOCS_DIR" ]; then
+        error "文档目录不存在: $ACTUAL_DOCS_DIR"
+        return
+    fi
+
+    # 统计文档数量
+    DOC_COUNT=$(find "$ACTUAL_DOCS_DIR" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
+    success "发现 $DOC_COUNT 个 Markdown 文档"
+
+    # 更新 docker-compose.yml
+    info "更新 Docker 配置..."
+
+    # 备份原配置
+    cp "$DATA_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml.backup"
+
+    # 更新 volumes 挂载点和环境变量
+    cat > "$DATA_DIR/docker-compose.yml" << EOF
+version: '3.8'
+
+services:
+  docs-share:
+    image: ghcr.io/$REPO:latest
+    container_name: docs-share
+    ports:
+      - "3457:3457"
+    volumes:
+      - $ACTUAL_DOCS_DIR:/app/docs
+EOF
+
+    # 如果是私有仓库，需要挂载 SSH 密钥
+    if [[ "$is_private" == "y" || "$is_private" == "Y" ]]; then
+        cat >> "$DATA_DIR/docker-compose.yml" << EOF
+      - $HOME/.ssh:/root/.ssh:ro
+EOF
+    fi
+
+    cat >> "$DATA_DIR/docker-compose.yml" << EOF
+    environment:
+      - PORT=3457
+      - API_KEY=$(grep "API_KEY" "$DATA_DIR/docker-compose.yml.backup" | cut -d'=' -f2)
+      - ENABLE_WEBHOOK=true
+      - GIT_REPO_PATH=/app/docs
+EOF
+
+    # 如果是私有仓库，添加 SSH 环境变量
+    if [[ "$is_private" == "y" || "$is_private" == "Y" ]]; then
+        SSH_KEY_NAME="github_docs_${REPO//\//_}"
+        cat >> "$DATA_DIR/docker-compose.yml" << EOF
+      - GIT_SSH_COMMAND=ssh -i /root/.ssh/$SSH_KEY_NAME -o StrictHostKeyChecking=no
+EOF
+    fi
+
+    cat >> "$DATA_DIR/docker-compose.yml" << EOF
+    restart: unless-stopped
+EOF
+
+    success "Webhook 配置完成"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📂 文档目录配置"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    info "Git 仓库: $DOCS_REPO_PATH"
+    info "文档目录: $ACTUAL_DOCS_DIR"
+    info "文档数量: $DOC_COUNT 个 .md 文件"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📝 下一步：配置 GitHub Webhook"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "1. 打开仓库: https://github.com/$REPO/settings/hooks"
+    echo "2. Add webhook"
+    echo "3. Payload URL: http://your-server:3457/api/webhook"
+    echo "4. Content type: application/json"
+    echo "5. Events: Just the push event"
+    echo ""
+    info "详细配置见: cat WEBHOOK-GUIDE.md"
+    echo ""
+}
+
+# 配置 Git Webhook（PM2 模式，包含 SSH 认证）
 configure_webhook() {
     echo ""
     info "是否需要配置 Git Webhook 自动部署？"
@@ -321,6 +488,24 @@ configure_webhook() {
             ;;
     esac
 
+    # 询问文档在仓库中的位置
+    echo ""
+    info "文档文件在仓库中的位置："
+    echo "  1) 仓库根目录（所有 .md 文件在根目录）"
+    echo "  2) docs/ 子目录（.md 文件在 docs/ 文件夹内）"
+    echo "  3) 其他自定义路径"
+    read -p "请选择 [1-3, 默认 1]: " docs_location
+
+    case ${docs_location:-1} in
+        1) DOCS_SUBDIR="." ;;
+        2) DOCS_SUBDIR="docs" ;;
+        3)
+            read -p "请输入文档所在子目录（如: documents）: " custom_dir
+            DOCS_SUBDIR="${custom_dir:-.}"
+            ;;
+        *) DOCS_SUBDIR="." ;;
+    esac
+
     # 如果是私有仓库，配置 SSH Deploy Key
     if [[ "$is_private" == "y" || "$is_private" == "Y" ]]; then
         info "检测到私有仓库，需要配置 SSH Deploy Key"
@@ -352,6 +537,52 @@ configure_webhook() {
         fi
     fi
 
+    # 确定实际文档目录
+    if [ "$DOCS_SUBDIR" = "." ]; then
+        ACTUAL_DOCS_DIR="$DOCS_REPO_PATH"
+    else
+        ACTUAL_DOCS_DIR="$DOCS_REPO_PATH/$DOCS_SUBDIR"
+    fi
+
+    # 检查文档目录是否存在
+    if [ ! -d "$ACTUAL_DOCS_DIR" ]; then
+        error "文档目录不存在: $ACTUAL_DOCS_DIR"
+        echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
+        return
+    fi
+
+    # 统计文档数量
+    DOC_COUNT=$(find "$ACTUAL_DOCS_DIR" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
+    success "发现 $DOC_COUNT 个 Markdown 文档"
+
+    # 链接文档目录到服务读取位置
+    if [ -d "$DATA_DIR/docs" ] && [ ! -L "$DATA_DIR/docs" ]; then
+        # 备份原有文档
+        mv "$DATA_DIR/docs" "$DATA_DIR/docs.backup.$(date +%s)"
+        warning "已备份原有文档目录"
+    fi
+
+    # 删除旧的符号链接（如果存在）
+    rm -f "$DATA_DIR/docs"
+
+    # 创建新的符号链接
+    ln -s "$ACTUAL_DOCS_DIR" "$DATA_DIR/docs"
+    success "已链接文档目录: $ACTUAL_DOCS_DIR → $DATA_DIR/docs"
+
+    # 对于 Docker 模式，还需要更新 docker-compose.yml
+    if [ -f "$DATA_DIR/docker-compose.yml" ]; then
+        info "检测到 Docker 模式，正在更新配置..."
+
+        # 备份原配置
+        cp "$DATA_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml.backup"
+
+        # 更新 volumes 挂载点
+        sed -i.bak "s|./docs:/app/docs|$ACTUAL_DOCS_DIR:/app/docs|g" "$DATA_DIR/docker-compose.yml"
+        rm -f "$DATA_DIR/docker-compose.yml.bak"
+
+        success "已更新 Docker 配置"
+    fi
+
     # 写入配置
     cat >> "$INSTALL_DIR/.env" << EOF
 
@@ -362,7 +593,13 @@ EOF
 
     success "Webhook 配置完成"
     echo ""
-    info "仓库路径: $DOCS_REPO_PATH"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📂 文档目录配置"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    info "Git 仓库: $DOCS_REPO_PATH"
+    info "文档目录: $ACTUAL_DOCS_DIR"
+    info "服务读取: $DATA_DIR/docs → $ACTUAL_DOCS_DIR"
+    info "文档数量: $DOC_COUNT 个 .md 文件"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "📝 下一步：配置 GitHub Webhook"
