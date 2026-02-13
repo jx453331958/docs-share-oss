@@ -18,6 +18,7 @@ function generateApiKey() {
 
 const PORT = process.env.PORT || 3457;
 const DOCS_DIR = join(__dirname, 'docs');
+const PUBLIC_DIR = join(__dirname, 'public');
 const USERS_FILE = join(__dirname, 'users.json');
 const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
@@ -470,9 +471,13 @@ async function serveStatic(req, res) {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/') pathname = '/index.html';
 
-  const filepath = join(DOCS_DIR, pathname);
-  // Security: ensure within DOCS_DIR
-  if (!filepath.startsWith(DOCS_DIR)) {
+  // Web UI 静态文件从 public/ 目录提供，文档从 docs/ 目录提供
+  const isPublicFile = pathname === '/index.html' || pathname === '/users.html';
+  const baseDir = isPublicFile ? PUBLIC_DIR : DOCS_DIR;
+  const filepath = join(baseDir, pathname);
+
+  // Security: ensure within allowed directory
+  if (!filepath.startsWith(baseDir)) {
     res.writeHead(403); res.end('Forbidden'); return;
   }
 
