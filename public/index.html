@@ -275,7 +275,7 @@
             margin-bottom: 4px;
             cursor: pointer;
             border-radius: 8px;
-            transition: all 0.2s;
+            transition: background 0.2s, border-color 0.2s;
             border-left: 2px solid transparent;
             position: relative;
         }
@@ -595,10 +595,16 @@
 
         /* ── Fade-in ── */
         @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(12px); }
+            from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .markdown-body { animation: fadeUp 0.4s ease-out; }
+        .markdown-body { animation: fadeUp 0.25s ease-out; }
+        @media (max-width: 768px) {
+            .markdown-body { animation: fadeUp 0.15s ease-out; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .markdown-body { animation: none; }
+        }
 
         /* ── Mobile ── */
         @media (max-width: 768px) {
@@ -921,30 +927,28 @@
         // ── Lazy Doc List Rendering ──
         function renderDocList() {
             const docList = document.getElementById('docList');
-            docList.innerHTML = '';
             displayedCount = 0;
 
             if (sortedDocs.length === 0) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;';
                 empty.textContent = searchQuery ? '未找到匹配的文档' : '暂无文档';
-                docList.appendChild(empty);
+                docList.replaceChildren(empty);
                 updateDocCount();
                 document.getElementById('loadSentinel').style.display = 'none';
                 return;
             }
 
-            loadMoreDocs();
+            loadMoreDocs(true);
             updateDocCount();
             setupLazyLoad();
         }
 
-        function loadMoreDocs() {
-            const docList = document.getElementById('docList');
-            const end = Math.min(displayedCount + PAGE_SIZE, sortedDocs.length);
+        function buildDocItems(start, end) {
+            const frag = document.createDocumentFragment();
             const canDrag = !searchQuery && currentSort === 'custom';
 
-            for (let i = displayedCount; i < end; i++) {
+            for (let i = start; i < end; i++) {
                 const doc = sortedDocs[i];
                 const li = document.createElement('li');
                 li.className = 'doc-item';
@@ -974,7 +978,20 @@
                     li.classList.add('active');
                     renderDoc(doc.file, doc.path);
                 };
-                docList.appendChild(li);
+                frag.appendChild(li);
+            }
+            return frag;
+        }
+
+        function loadMoreDocs(isFullRender) {
+            const docList = document.getElementById('docList');
+            const end = Math.min(displayedCount + PAGE_SIZE, sortedDocs.length);
+            const frag = buildDocItems(displayedCount, end);
+
+            if (isFullRender) {
+                docList.replaceChildren(frag);
+            } else {
+                docList.appendChild(frag);
             }
 
             displayedCount = end;
