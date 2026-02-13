@@ -677,6 +677,9 @@ configure_webhook_docker() {
     # 从 ports 行提取外部端口（格式: - "PORT:3457" 或旧格式 - "PORT:PORT"）
     local CONFIGURED_PORT=$(grep -E '^\s*-\s*"?[0-9]+:' "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed -E 's/.*"([0-9]+):.*/\1/')
     local CONFIGURED_API_KEY=$(grep "API_KEY=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*API_KEY=//' | tr -d ' "' | tr -d '-')
+    # 保留鉴权配置
+    local CONFIGURED_ENABLE_AUTH=$(grep "ENABLE_AUTH=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*ENABLE_AUTH=//' | tr -d ' "')
+    local CONFIGURED_AUTH_USERS=$(grep "AUTH_USERS=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | sed 's/.*AUTH_USERS=//' | tr -d ' "')
 
     # 验证提取的配置
     if [ -z "$CONFIGURED_PORT" ]; then
@@ -719,6 +722,18 @@ EOF
       - ENABLE_WEBHOOK=true
       - GIT_REPO_PATH=/app/docs
 EOF
+
+    # 保留鉴权配置
+    if [ -n "$CONFIGURED_ENABLE_AUTH" ]; then
+        cat >> "$DATA_DIR/docker-compose.yml" << EOF
+      - ENABLE_AUTH=$CONFIGURED_ENABLE_AUTH
+EOF
+    fi
+    if [ -n "$CONFIGURED_AUTH_USERS" ]; then
+        cat >> "$DATA_DIR/docker-compose.yml" << EOF
+      - AUTH_USERS=$CONFIGURED_AUTH_USERS
+EOF
+    fi
 
     # 如果是私有仓库，添加 SSH 环境变量
     if [[ "$is_private" == "y" || "$is_private" == "Y" ]]; then
