@@ -42,6 +42,7 @@ cd docs-share-oss
 **支持功能：**
 - ✅ 首次安装（Docker / PM2）
 - ✅ 自动配置环境和 API Key
+- ✅ 自动配置 Git Webhook（含私有仓库 SSH 认证）
 - ✅ 自动更新到最新版
 - ✅ 启动/停止/重启服务
 - ✅ 状态检查和日志查看
@@ -174,9 +175,12 @@ curl http://your-server:3457/api/docs
 
 ### Git Webhook 自动部署
 
-> **⚠️ 私有仓库需要配置认证**
-> 如果你的文档仓库是私有的，需要先配置 SSH Deploy Key。
-> 运行：`./setup-github-ssh.sh` 或查看 [WEBHOOK-GUIDE.md](WEBHOOK-GUIDE.md#-github-认证配置重要)
+> **💡 一键脚本已集成自动配置**
+> 首次安装时，`install.sh` 会自动引导配置 Webhook，包括私有仓库的 SSH 认证。
+>
+> 手动配置参考：
+> - 快速配置：`./setup-github-ssh.sh`
+> - 完整指南：[WEBHOOK-GUIDE.md](WEBHOOK-GUIDE.md#-github-认证配置重要)
 
 #### 1. 启用 Webhook
 
