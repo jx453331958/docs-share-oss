@@ -674,6 +674,10 @@ configure_webhook_docker() {
     DOC_COUNT=$(find "$ACTUAL_DOCS_DIR" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
     success "发现 $DOC_COUNT 个 Markdown 文档"
 
+    # 生成 Webhook Secret
+    local WEBHOOK_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 64)
+    success "已自动生成 Webhook Secret"
+
     # 更新 docker-compose.yml
     info "更新 Docker 配置..."
 
@@ -727,6 +731,7 @@ EOF
     environment:
       - API_KEY=$CONFIGURED_API_KEY
       - ENABLE_WEBHOOK=true
+      - WEBHOOK_SECRET=$WEBHOOK_SECRET
       - GIT_REPO_PATH=/app/docs
 EOF
 
@@ -856,8 +861,11 @@ EOF
     echo "2. 点击 Add webhook"
     echo -e "3. Payload URL: ${GREEN}$webhook_url${NC}"
     echo "4. Content type: application/json"
-    echo "5. Events: Just the push event"
-    echo "6. 点击 Add webhook"
+    echo -e "5. Secret: ${GREEN}$WEBHOOK_SECRET${NC}"
+    echo "6. Events: Just the push event"
+    echo "7. 点击 Add webhook"
+    echo ""
+    echo -e "GitLab 用户: 将 Secret Token 设置为上述 Secret 值"
     echo ""
     info "详细配置见: cat WEBHOOK-GUIDE.md"
     echo ""
@@ -1034,11 +1042,16 @@ configure_webhook() {
         success "已更新 Docker 配置"
     fi
 
+    # 生成 Webhook Secret
+    local WEBHOOK_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 64)
+    success "已自动生成 Webhook Secret"
+
     # 写入配置
     cat >> "$INSTALL_DIR/.env" << EOF
 
 # Git Webhook 配置
 ENABLE_WEBHOOK=true
+WEBHOOK_SECRET=$WEBHOOK_SECRET
 GIT_REPO_PATH=$DOCS_REPO_PATH
 EOF
 
@@ -1145,8 +1158,11 @@ EOF
     echo "2. 点击 Add webhook"
     echo -e "3. Payload URL: ${GREEN}$webhook_url${NC}"
     echo "4. Content type: application/json"
-    echo "5. Events: Just the push event"
-    echo "6. 点击 Add webhook"
+    echo -e "5. Secret: ${GREEN}$WEBHOOK_SECRET${NC}"
+    echo "6. Events: Just the push event"
+    echo "7. 点击 Add webhook"
+    echo ""
+    echo -e "GitLab 用户: 将 Secret Token 设置为上述 Secret 值"
     echo ""
     info "详细配置见: cat WEBHOOK-GUIDE.md"
     echo ""

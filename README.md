@@ -179,6 +179,7 @@ npm run dev  # 文件变更自动重启
 | `ENABLE_AUTH` | `true` | 是否启用前端访问鉴权（默认启用，保护私有文档） |
 | `AUTH_USERS` | `admin:admin` | 授权用户列表（格式：`user1:pass1,user2:pass2`）⚠️ 请修改默认密码 |
 | `ENABLE_WEBHOOK` | `false` | 是否启用 Git webhook |
+| `WEBHOOK_SECRET` | 自动生成 | Webhook 签名密钥（用于验证 GitHub/GitLab 请求） |
 | `GIT_REPO_PATH` | 项目目录 | Git 仓库**绝对路径**（webhook 执行 `git pull` 的目录） |
 
 **自动生成的配置示例** （安装脚本自动创建）：
@@ -412,13 +413,17 @@ curl http://your-server:3457/api/docs
 
 ```bash
 export ENABLE_WEBHOOK=true
+export WEBHOOK_SECRET=your-webhook-secret  # 首次启动会自动生成
 ```
 
 或在 `.env` 文件中：
 
 ```
 ENABLE_WEBHOOK=true
+WEBHOOK_SECRET=your-webhook-secret
 ```
+
+> `WEBHOOK_SECRET` 用于验证请求来源。支持 GitHub 的 HMAC-SHA256 签名（`X-Hub-Signature-256`）和 GitLab 的 Token 验证（`X-Gitlab-Token`）。首次启动时会自动生成并保存到 `.env`。
 
 #### 2. 设置 GIT_REPO_PATH
 
@@ -442,18 +447,32 @@ GIT_REPO_PATH=/app/docs
 1. 进入仓库 Settings → Webhooks → Add webhook
 2. Payload URL: `http://your-server:3457/api/webhook`
 3. Content type: `application/json`
-4. Events: 选择 "Just the push event"
+4. Secret: 填入 `WEBHOOK_SECRET` 的值
+5. Events: 选择 "Just the push event"
 
 **GitLab:**
 1. 进入仓库 Settings → Webhooks
 2. URL: `http://your-server:3457/api/webhook`
-3. Trigger: 勾选 "Push events"
+3. Secret Token: 填入 `WEBHOOK_SECRET` 的值
+4. Trigger: 勾选 "Push events"
 
 #### 4. 测试 Webhook
 
 ```bash
-# 手动触发
-curl -X POST http://your-server:3457/api/webhook
+# 手动触发（GitHub 签名方式）
+SECRET="your-webhook-secret"
+BODY='{"ref":"refs/heads/main"}'
+SIG="sha256=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | cut -d' ' -f2)"
+curl -X POST http://your-server:3457/api/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature-256: $SIG" \
+  -d "$BODY"
+
+# 手动触发（GitLab Token 方式）
+curl -X POST http://your-server:3457/api/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Gitlab-Token: your-webhook-secret" \
+  -d '{}'
 
 # 本地推送测试
 git push  # 服务器应该自动 git pull

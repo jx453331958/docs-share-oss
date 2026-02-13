@@ -4,7 +4,7 @@ import { join, extname, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHmac, timingSafeEqual } from 'crypto';
 
 const execAsync = promisify(exec);
 
@@ -20,10 +20,10 @@ const PORT = process.env.PORT || 3457;
 const DOCS_DIR = join(__dirname, 'docs');
 const PUBLIC_DIR = join(__dirname, 'public');
 const USERS_FILE = join(__dirname, 'users.json');
-const DOC_ORDER_FILE = join(__dirname, 'doc-order.json');
 const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || __dirname;
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || randomBytes(32).toString('hex');
 
 // 访问鉴权配置
 const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
@@ -279,35 +279,7 @@ async function handleApiDocs(req, res) {
   const files = await readdir(DOCS_DIR);
   const mdFiles = files.filter(f => f.endsWith('.md'));
   const docs = await Promise.all(mdFiles.map(f => extractMeta(join(DOCS_DIR, f), f)));
-
-  // 按自定义顺序排列，不在列表中的新文档按 mtime 降序追加到末尾
-  let order = null;
-  try {
-    const data = await readFile(DOC_ORDER_FILE, 'utf-8');
-    order = JSON.parse(data);
-  } catch {
-    // 文件不存在或解析失败，fallback 到 mtime 排序
-  }
-
-  if (Array.isArray(order) && order.length > 0) {
-    const orderMap = new Map(order.map((file, idx) => [file, idx]));
-    const ordered = [];
-    const unordered = [];
-    for (const doc of docs) {
-      if (orderMap.has(doc.file)) {
-        ordered.push(doc);
-      } else {
-        unordered.push(doc);
-      }
-    }
-    ordered.sort((a, b) => orderMap.get(a.file) - orderMap.get(b.file));
-    unordered.sort((a, b) => b.mtime - a.mtime);
-    docs.length = 0;
-    docs.push(...ordered, ...unordered);
-  } else {
-    docs.sort((a, b) => b.mtime - a.mtime); // newest first
-  }
-
+  docs.sort((a, b) => b.mtime - a.mtime); // newest first
   res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(docs));
 }
@@ -383,27 +355,46 @@ async function handleDeleteDoc(req, res, filename) {
   }
 }
 
-// ── PUT /api/docs/order - 更新文档排序 ──
-async function handleUpdateDocOrder(req, res) {
-  const user = requireSession(req, res, { redirect: false });
-  if (!user) return;
+// ── Read raw body (Buffer) ──
+async function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
 
-  try {
-    const body = await parseBody(req);
-    const { order } = body;
-
-    if (!Array.isArray(order) || !order.every(f => typeof f === 'string')) {
-      throw new Error('order must be an array of filenames');
+// ── Verify webhook signature ──
+function verifyWebhookSignature(req, rawBody) {
+  // 1. GitHub: X-Hub-Signature-256 (HMAC-SHA256)
+  const githubSig = req.headers['x-hub-signature-256'];
+  if (githubSig) {
+    const expected = 'sha256=' + createHmac('sha256', WEBHOOK_SECRET).update(rawBody).digest('hex');
+    const expectedBuf = Buffer.from(expected);
+    const receivedBuf = Buffer.from(githubSig);
+    if (expectedBuf.length === receivedBuf.length && timingSafeEqual(expectedBuf, receivedBuf)) {
+      return true;
     }
-
-    await writeFile(DOC_ORDER_FILE, JSON.stringify(order, null, 2), 'utf-8');
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true }));
-  } catch (error) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: error.message }));
+    console.warn('[Webhook] GitHub signature verification failed');
+    return false;
   }
+
+  // 2. GitLab: X-Gitlab-Token (simple token comparison)
+  const gitlabToken = req.headers['x-gitlab-token'];
+  if (gitlabToken) {
+    const expectedBuf = Buffer.from(WEBHOOK_SECRET);
+    const receivedBuf = Buffer.from(gitlabToken);
+    if (expectedBuf.length === receivedBuf.length && timingSafeEqual(expectedBuf, receivedBuf)) {
+      return true;
+    }
+    console.warn('[Webhook] GitLab token verification failed');
+    return false;
+  }
+
+  // 3. No signature header provided
+  console.warn('[Webhook] No signature header found (expected X-Hub-Signature-256 or X-Gitlab-Token)');
+  return false;
 }
 
 // ── POST /api/webhook - Git webhook ──
@@ -411,6 +402,16 @@ async function handleWebhook(req, res) {
   if (!ENABLE_WEBHOOK) {
     res.writeHead(404);
     res.end('Webhook disabled');
+    return;
+  }
+
+  // Read raw body for HMAC verification
+  const rawBody = await readRawBody(req);
+
+  // Verify webhook secret
+  if (!verifyWebhookSignature(req, rawBody)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: invalid signature' }));
     return;
   }
 
@@ -704,10 +705,6 @@ const server = createServer(async (req, res) => {
     return handleUploadDoc(req, res);
   }
 
-  if (pathname === '/api/docs/order' && req.method === 'PUT') {
-    return handleUpdateDocOrder(req, res);
-  }
-
   if (pathname.startsWith('/api/docs/') && req.method === 'DELETE') {
     const filename = decodeURIComponent(pathname.replace('/api/docs/', ''));
     return handleDeleteDoc(req, res, filename);
@@ -781,6 +778,7 @@ server.listen(PORT, '0.0.0.0', async () => {
 PORT=${PORT}
 API_KEY=${API_KEY}
 ENABLE_WEBHOOK=false
+WEBHOOK_SECRET=${WEBHOOK_SECRET}
 `;
       await writeFile(envPath, envContent, { flag: 'wx' }); // wx = 只在文件不存在时写入
       console.log(`✓ Saved to: ${envPath}`);
@@ -793,14 +791,13 @@ ENABLE_WEBHOOK=false
     console.log(`🔑 API Key:   ✓ Loaded from environment`);
   }
 
-  console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}`);
+  console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}${ENABLE_WEBHOOK ? ` (Secret: ${process.env.WEBHOOK_SECRET ? '✓ From env' : '⚠ Auto-generated'})` : ''}`);
   console.log(`🔒 Auth:      ${ENABLE_AUTH ? `✓ Enabled (${AUTH_USERS.size} user${AUTH_USERS.size > 1 ? 's' : ''})` : '✗ Disabled (Public access)'}`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
   console.log(`API Endpoints:`);
   console.log(`  GET    /api/docs          - List all documents`);
   console.log(`  POST   /api/docs          - Upload document (requires auth)`);
   console.log(`  DELETE /api/docs/:file    - Delete document (requires auth)`);
-  console.log(`  PUT    /api/docs/order    - Update document order`);
   if (ENABLE_WEBHOOK) {
     console.log(`  POST   /api/webhook       - Git webhook handler`);
   }
