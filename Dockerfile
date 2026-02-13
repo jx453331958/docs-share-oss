@@ -11,6 +11,7 @@ COPY docs ./docs
 # docs 目录可以挂载用户自己的文档覆盖
 VOLUME /app/docs
 
-EXPOSE 3457
+# 注意：端口通过环境变量 PORT 配置，默认 3457
+# 不硬编码 EXPOSE，由 docker-compose.yml 控制端口映射
 
 CMD ["node", "server.mjs"]
