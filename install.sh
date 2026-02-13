@@ -706,20 +706,65 @@ EOF
 
     # 询问用户外网访问地址
     echo ""
-    info "请输入服务器的外网访问地址（域名或 IP）"
+    info "请输入服务器的外网访问地址"
+    echo "  • 使用域名（如: docs.example.com）"
+    echo "  • 使用 IP（如: 123.45.67.89）"
+    echo "  • 可包含协议（如: https://docs.example.com）"
     echo ""
     if [ -n "$server_addr" ]; then
-        echo -e "自动检测到: ${GREEN}$server_addr${NC}"
+        echo -e "自动检测到 IP: ${GREEN}$server_addr${NC}"
         read -p "直接回车使用检测值，或输入自定义地址: " custom_addr < /dev/tty
         server_addr="${custom_addr:-$server_addr}"
     else
         warning "未能自动检测到公网地址"
-        read -p "请输入外网访问地址（域名/IP）: " custom_addr < /dev/tty
+        read -p "请输入外网访问地址: " custom_addr < /dev/tty
         server_addr="${custom_addr:-your-server}"
     fi
 
+    # 解析用户输入的 URL
+    local protocol="http"
+    local host="$server_addr"
+    local port=""
+
+    # 提取协议（如果有）
+    if [[ "$server_addr" =~ ^https:// ]]; then
+        protocol="https"
+        host="${server_addr#https://}"
+    elif [[ "$server_addr" =~ ^http:// ]]; then
+        protocol="http"
+        host="${server_addr#http://}"
+    fi
+
+    # 提取端口（如果有）
+    if [[ "$host" =~ :[0-9]+$ ]]; then
+        port="${host##*:}"
+        host="${host%:*}"
+    fi
+
+    # 智能判断是否需要端口号
+    local webhook_url=""
+    if [ -n "$port" ]; then
+        # 用户明确指定了端口
+        webhook_url="${protocol}://${host}:${port}/api/webhook"
+    elif [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        # 是 IP 地址，使用配置的端口
+        webhook_url="${protocol}://${host}:${webhook_port}/api/webhook"
+    else
+        # 是域名，询问是否需要端口号
+        echo ""
+        info "检测到域名: $host"
+        read -p "是否使用标准端口（80/443）？[y/n, 默认 y] " use_standard_port < /dev/tty
+        use_standard_port=${use_standard_port:-y}
+
+        if [[ "$use_standard_port" == "y" || "$use_standard_port" == "Y" ]]; then
+            webhook_url="${protocol}://${host}/api/webhook"
+        else
+            webhook_url="${protocol}://${host}:${webhook_port}/api/webhook"
+        fi
+    fi
+
     echo ""
-    success "Webhook URL: http://${server_addr}:${webhook_port}/api/webhook"
+    success "Webhook URL: $webhook_url"
     echo ""
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -730,7 +775,7 @@ EOF
     echo ""
     echo "1. 打开仓库: https://github.com/$REPO/settings/hooks"
     echo "2. 点击 Add webhook"
-    echo -e "3. Payload URL: ${GREEN}http://${server_addr}:${webhook_port}/api/webhook${NC}"
+    echo -e "3. Payload URL: ${GREEN}$webhook_url${NC}"
     echo "4. Content type: application/json"
     echo "5. Events: Just the push event"
     echo "6. 点击 Add webhook"
@@ -950,20 +995,65 @@ EOF
 
     # 询问用户外网访问地址
     echo ""
-    info "请输入服务器的外网访问地址（域名或 IP）"
+    info "请输入服务器的外网访问地址"
+    echo "  • 使用域名（如: docs.example.com）"
+    echo "  • 使用 IP（如: 123.45.67.89）"
+    echo "  • 可包含协议（如: https://docs.example.com）"
     echo ""
     if [ -n "$server_addr" ]; then
-        echo -e "自动检测到: ${GREEN}$server_addr${NC}"
+        echo -e "自动检测到 IP: ${GREEN}$server_addr${NC}"
         read -p "直接回车使用检测值，或输入自定义地址: " custom_addr < /dev/tty
         server_addr="${custom_addr:-$server_addr}"
     else
         warning "未能自动检测到公网地址"
-        read -p "请输入外网访问地址（域名/IP）: " custom_addr < /dev/tty
+        read -p "请输入外网访问地址: " custom_addr < /dev/tty
         server_addr="${custom_addr:-your-server}"
     fi
 
+    # 解析用户输入的 URL
+    local protocol="http"
+    local host="$server_addr"
+    local port=""
+
+    # 提取协议（如果有）
+    if [[ "$server_addr" =~ ^https:// ]]; then
+        protocol="https"
+        host="${server_addr#https://}"
+    elif [[ "$server_addr" =~ ^http:// ]]; then
+        protocol="http"
+        host="${server_addr#http://}"
+    fi
+
+    # 提取端口（如果有）
+    if [[ "$host" =~ :[0-9]+$ ]]; then
+        port="${host##*:}"
+        host="${host%:*}"
+    fi
+
+    # 智能判断是否需要端口号
+    local webhook_url=""
+    if [ -n "$port" ]; then
+        # 用户明确指定了端口
+        webhook_url="${protocol}://${host}:${port}/api/webhook"
+    elif [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        # 是 IP 地址，使用配置的端口
+        webhook_url="${protocol}://${host}:${webhook_port}/api/webhook"
+    else
+        # 是域名，询问是否需要端口号
+        echo ""
+        info "检测到域名: $host"
+        read -p "是否使用标准端口（80/443）？[y/n, 默认 y] " use_standard_port < /dev/tty
+        use_standard_port=${use_standard_port:-y}
+
+        if [[ "$use_standard_port" == "y" || "$use_standard_port" == "Y" ]]; then
+            webhook_url="${protocol}://${host}/api/webhook"
+        else
+            webhook_url="${protocol}://${host}:${webhook_port}/api/webhook"
+        fi
+    fi
+
     echo ""
-    success "Webhook URL: http://${server_addr}:${webhook_port}/api/webhook"
+    success "Webhook URL: $webhook_url"
     echo ""
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -974,7 +1064,7 @@ EOF
     echo ""
     echo "1. 打开仓库: https://github.com/$REPO/settings/hooks"
     echo "2. 点击 Add webhook"
-    echo -e "3. Payload URL: ${GREEN}http://${server_addr}:${webhook_port}/api/webhook${NC}"
+    echo -e "3. Payload URL: ${GREEN}$webhook_url${NC}"
     echo "4. Content type: application/json"
     echo "5. Events: Just the push event"
     echo "6. 点击 Add webhook"
