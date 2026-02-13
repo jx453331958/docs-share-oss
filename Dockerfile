@@ -3,7 +3,8 @@ FROM node:24-alpine
 LABEL org.opencontainers.image.source="https://github.com/jx453331958/docs-share"
 LABEL org.opencontainers.image.description="零配置 Markdown 文档站"
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git \
+    && git config --global --add safe.directory '*'
 
 WORKDIR /app
 
