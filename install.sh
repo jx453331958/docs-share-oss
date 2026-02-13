@@ -403,6 +403,11 @@ configure_webhook_docker() {
         return
     fi
 
+    # 标准化仓库地址：支持完整 URL 或 username/repo 格式
+    # 移除可能的 https://github.com/ 前缀和 .git 后缀
+    REPO=$(echo "$REPO" | sed -e 's|^https\?://github.com/||' -e 's|\.git$||')
+    info "仓库: $REPO"
+
     echo ""
     read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
 
@@ -568,6 +573,11 @@ configure_webhook() {
         echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
         return
     fi
+
+    # 标准化仓库地址：支持完整 URL 或 username/repo 格式
+    # 移除可能的 https://github.com/ 前缀和 .git 后缀
+    REPO=$(echo "$REPO" | sed -e 's|^https\?://github.com/||' -e 's|\.git$||')
+    info "仓库: $REPO"
 
     echo ""
     read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
@@ -838,12 +848,12 @@ EOF
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "操作步骤："
-    echo "1. 打开: ${BLUE}https://github.com/$REPO/settings/keys${NC}"
-    echo "2. 点击 ${GREEN}Add deploy key${NC}"
+    echo -e "1. 打开: ${BLUE}https://github.com/$REPO/settings/keys${NC}"
+    echo -e "2. 点击 ${GREEN}Add deploy key${NC}"
     echo "3. Title: Docs Share Server ($(hostname))"
     echo "4. Key: [粘贴上面的公钥]"
-    echo "5. Allow write access: ${RED}❌ 不勾选${NC}"
-    echo "6. 点击 ${GREEN}Add key${NC}"
+    echo -e "5. Allow write access: ${RED}❌ 不勾选${NC}"
+    echo -e "6. 点击 ${GREEN}Add key${NC}"
     echo ""
 
     read -p "完成后按回车继续..." < /dev/tty
