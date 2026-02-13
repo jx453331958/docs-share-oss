@@ -657,6 +657,10 @@ configure_webhook_docker() {
     # 备份原配置
     cp "$DATA_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml.backup"
 
+    # 从备份中读取配置
+    local CONFIGURED_PORT=$(grep "PORT=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | cut -d'=' -f2 | tr -d ' "' | tr -d '-')
+    local CONFIGURED_API_KEY=$(grep "API_KEY=" "$DATA_DIR/docker-compose.yml.backup" | head -1 | cut -d'=' -f2 | tr -d ' "' | tr -d '-')
+
     # 更新 volumes 挂载点和环境变量
     cat > "$DATA_DIR/docker-compose.yml" << EOF
 services:
@@ -664,7 +668,7 @@ services:
     image: ghcr.io/jx453331958/docs-share-oss:latest
     container_name: docs-share
     ports:
-      - "3457:3457"
+      - "$CONFIGURED_PORT:$CONFIGURED_PORT"
     volumes:
       - $ACTUAL_DOCS_DIR:/app/docs
 EOF
@@ -678,8 +682,8 @@ EOF
 
     cat >> "$DATA_DIR/docker-compose.yml" << EOF
     environment:
-      - PORT=3457
-      - API_KEY=$(grep "API_KEY" "$DATA_DIR/docker-compose.yml.backup" | cut -d'=' -f2)
+      - PORT=$CONFIGURED_PORT
+      - API_KEY=$CONFIGURED_API_KEY
       - ENABLE_WEBHOOK=true
       - GIT_REPO_PATH=/app/docs
 EOF
