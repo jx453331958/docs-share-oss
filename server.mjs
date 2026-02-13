@@ -250,8 +250,45 @@ async function parseMultipart(req) {
   });
 }
 
+// ── Git file times: use git log instead of fs mtime ──
+async function getGitFileTimes(dir) {
+  try {
+    // Get path prefix within the git repo (e.g. "docs/" or "")
+    const { stdout: prefix } = await execAsync('git rev-parse --show-prefix', { cwd: dir });
+    const pathPrefix = prefix.trim();
+
+    const { stdout } = await execAsync(
+      'git log --format="COMMIT_TS:%at" --name-only --diff-filter=ACMR',
+      { cwd: dir, maxBuffer: 10 * 1024 * 1024 }
+    );
+
+    const times = new Map();
+    let currentTs = 0;
+
+    for (const line of stdout.split('\n')) {
+      if (line.startsWith('COMMIT_TS:')) {
+        currentTs = parseInt(line.slice(10)) * 1000;
+      } else if (line.trim() && currentTs) {
+        let filename = line.trim();
+        // Strip path prefix to get filename relative to dir
+        if (pathPrefix && filename.startsWith(pathPrefix)) {
+          filename = filename.slice(pathPrefix.length);
+        }
+        // Only include files directly in dir (skip subdirectories)
+        if (!filename.includes('/') && !times.has(filename)) {
+          times.set(filename, currentTs);
+        }
+      }
+    }
+
+    return times.size > 0 ? times : null;
+  } catch {
+    return null; // Not a git repo or git not available
+  }
+}
+
 // Title extraction: first # heading or filename
-async function extractMeta(filepath, filename) {
+async function extractMeta(filepath, filename, gitMtime) {
   try {
     const content = await readFile(filepath, 'utf-8');
     const titleMatch = content.match(/^#\s+(.+)/m);
@@ -260,7 +297,7 @@ async function extractMeta(filepath, filename) {
     const lines = content.split('\n').filter(l => l.trim() && !l.startsWith('#') && !l.startsWith('>'));
     const desc = lines[0]?.slice(0, 80) || '';
     const s = await stat(filepath);
-    return { file: filename, title, desc, mtime: s.mtimeMs };
+    return { file: filename, title, desc, mtime: gitMtime || s.mtimeMs };
   } catch {
     return { file: filename, title: filename, desc: '', mtime: 0 };
   }
@@ -278,7 +315,13 @@ async function handleApiDocs(req, res) {
 
   const files = await readdir(DOCS_DIR);
   const mdFiles = files.filter(f => f.endsWith('.md'));
-  const docs = await Promise.all(mdFiles.map(f => extractMeta(join(DOCS_DIR, f), f)));
+
+  // Try git commit times (accurate even after git pull), fall back to fs mtime
+  const gitTimes = await getGitFileTimes(DOCS_DIR);
+
+  const docs = await Promise.all(
+    mdFiles.map(f => extractMeta(join(DOCS_DIR, f), f, gitTimes?.get(f)))
+  );
   docs.sort((a, b) => b.mtime - a.mtime); // newest first
   res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(docs));
