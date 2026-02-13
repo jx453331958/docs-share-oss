@@ -26,21 +26,142 @@
 
 ---
 
-## 🎯 完整配置步骤
+## 🔑 GitHub 认证配置（重要！）
 
-### 场景 1：文档在独立的 Git 仓库（推荐）
+### 公开 vs 私有仓库
 
-假设你的文档在单独的仓库：`https://github.com/yourname/my-docs.git`
+| 仓库类型 | 是否需要认证 | 说明 |
+|---------|------------|------|
+| **公开仓库** | ❌ 不需要 | 可以直接 `git clone` 和 `git pull` |
+| **私有仓库** | ✅ 需要 | 必须配置 SSH 密钥或 Token |
 
-#### 第 1 步：在服务器上克隆文档仓库
+### 推荐方式：SSH Deploy Key（最安全）
+
+**优势：**
+- ✅ 只读权限（无法推送，安全）
+- ✅ 专用密钥（单独管理）
+- ✅ 无需共享个人账号
+
+#### 步骤 1：在服务器生成 SSH 密钥
 
 ```bash
 # SSH 到服务器
 ssh user@your-server.com
 
-# 克隆文档仓库到指定位置
-cd ~
+# 生成专用密钥
+ssh-keygen -t ed25519 -C "docs-deploy-key" -f ~/.ssh/github_docs_deploy
+
+# 输出公钥内容（稍后要用）
+cat ~/.ssh/github_docs_deploy.pub
+```
+
+#### 步骤 2：添加 Deploy Key 到 GitHub
+
+1. 打开仓库：https://github.com/yourname/my-docs
+2. 进入 **Settings** → **Deploy keys** → **Add deploy key**
+3. 填写：
+   ```
+   Title: Docs Share Server
+   Key: [粘贴刚才的公钥内容]
+   Allow write access: ❌ 不勾选（只读即可）
+   ```
+4. 点击 **Add key**
+
+#### 步骤 3：配置 SSH
+
+```bash
+# 添加 SSH 配置
+cat >> ~/.ssh/config << EOF
+
+Host github-docs
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/github_docs_deploy
+    IdentitiesOnly yes
+EOF
+
+# 测试连接
+ssh -T github-docs
+# 应该看到：Hi yourname/my-docs! You've successfully authenticated...
+```
+
+#### 步骤 4：使用 SSH URL 克隆
+
+```bash
+# 注意：使用自定义 Host 名称
+git clone github-docs:yourname/my-docs.git ~/my-docs
+
+# 或者修改已有仓库的 remote
+cd ~/my-docs
+git remote set-url origin github-docs:yourname/my-docs.git
+```
+
+---
+
+### 方式 2：Personal Access Token（简单但不太安全）
+
+#### 步骤 1：创建 Token
+
+1. GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+2. **Generate new token (classic)**
+3. 勾选：`repo` (Full control of private repositories)
+4. 生成并复制 Token（只显示一次！）
+
+#### 步骤 2：使用 Token 克隆
+
+```bash
+# 方法 A：URL 中包含 Token（不推荐，会暴露在历史中）
+git clone https://TOKEN@github.com/yourname/my-docs.git
+
+# 方法 B：使用 Git credential（推荐）
 git clone https://github.com/yourname/my-docs.git
+# 提示输入用户名和密码时：
+# Username: yourname
+# Password: [粘贴 Token]
+
+# 保存凭证（可选）
+git config --global credential.helper store
+```
+
+---
+
+### 方式 3：个人 SSH 密钥（不推荐用于服务器）
+
+如果你已经有 GitHub SSH 密钥，可以直接使用：
+
+```bash
+# 复制你的私钥到服务器（不安全！）
+scp ~/.ssh/id_ed25519 user@server:~/.ssh/
+
+# 或在服务器上生成新密钥并添加到你的 GitHub 账号
+ssh-keygen -t ed25519 -C "your_email@example.com"
+cat ~/.ssh/id_ed25519.pub  # 添加到 GitHub Settings → SSH keys
+```
+
+⚠️ **不推荐原因：** 这样会给服务器你账号的所有仓库权限，风险太大。
+
+---
+
+## 🎯 完整配置步骤
+
+### 场景 1：文档在独立的 Git 仓库（推荐）
+
+假设你的文档在单独的仓库：`https://github.com/yourname/my-docs.git`（私有仓库）
+
+#### 第 1 步：配置 SSH Deploy Key（见上方）
+
+#### 第 2 步：在服务器上克隆文档仓库
+
+```bash
+# SSH 到服务器
+ssh user@your-server.com
+
+# 克隆文档仓库（使用 SSH）
+cd ~
+git clone github-docs:yourname/my-docs.git
+
+# 或使用 HTTPS + Token
+git clone https://TOKEN@github.com/yourname/my-docs.git
 
 # 文档仓库路径
 /home/user/my-docs
@@ -470,27 +591,67 @@ pm2 logs docs-share | grep Webhook
 
 ---
 
-### Q: Docker 容器内 git pull 失败
+### Q: Docker 容器内 git pull 失败（私有仓库）
 
-**原因：** 容器内没有 Git 凭证（私有仓库）
+**原因：** 容器内没有 Git 凭证
 
-**解决：**
+**解决方案：**
 
-**方法 1：使用公开仓库（推荐）**
+**方法 1：使用公开仓库（最简单）**
 
-**方法 2：使用 SSH 密钥**
+将仓库设为 Public（如果可以）
+
+---
+
+**方法 2：挂载 SSH 密钥到容器**
+
 ```yaml
-volumes:
-  - /home/user/my-docs:/app/docs
-  - /home/user/.ssh:/root/.ssh:ro  # 挂载 SSH 密钥
+# docker-compose.yml
+services:
+  docs-share:
+    volumes:
+      - /home/user/my-docs:/app/docs
+      - /home/user/.ssh:/root/.ssh:ro  # 挂载 SSH 密钥（只读）
+    environment:
+      - GIT_SSH_COMMAND=ssh -i /root/.ssh/github_docs_deploy -o StrictHostKeyChecking=no
 ```
 
-**方法 3：使用 Personal Access Token**
+⚠️ **注意：** 确保主机上的仓库已配置好 SSH（见上方 SSH Deploy Key 配置）
+
+---
+
+**方法 3：在主机上 git pull，容器只读取文件**
+
 ```bash
-# 在服务器仓库中配置
+# 在主机上定时拉取（推荐！）
+cat > /usr/local/bin/docs-sync.sh << 'EOF'
+#!/bin/bash
+cd /home/user/my-docs
+git pull origin main
+EOF
+
+chmod +x /usr/local/bin/docs-sync.sh
+
+# 添加到 crontab（每分钟检查一次）
+echo "* * * * * /usr/local/bin/docs-sync.sh" | crontab -
+
+# Docker 只挂载文件，不执行 git pull
+# webhook 触发 webhook 端点时，由主机上的脚本处理
+```
+
+---
+
+**方法 4：使用 Personal Access Token（不推荐）**
+
+```bash
+# 在主机仓库中配置
 cd /home/user/my-docs
 git remote set-url origin https://TOKEN@github.com/user/repo.git
+
+# 容器会继承这个配置
 ```
+
+⚠️ **不推荐原因：** Token 会明文保存在 `.git/config` 中
 
 ---
 

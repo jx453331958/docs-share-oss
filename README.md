@@ -174,6 +174,10 @@ curl http://your-server:3457/api/docs
 
 ### Git Webhook 自动部署
 
+> **⚠️ 私有仓库需要配置认证**
+> 如果你的文档仓库是私有的，需要先配置 SSH Deploy Key。
+> 运行：`./setup-github-ssh.sh` 或查看 [WEBHOOK-GUIDE.md](WEBHOOK-GUIDE.md#-github-认证配置重要)
+
 #### 1. 启用 Webhook
 
 在服务器上设置环境变量：
@@ -434,10 +438,20 @@ chmod +x publish-ai-doc.sh
 
 ## 🔒 安全建议
 
-1. **更改默认 API Key**
+1. **API Key 自动生成**
    ```bash
-   # 生成强密码作为 API Key
+   # 首次启动会自动生成并保存到 .env
+   # 或手动生成：
    openssl rand -base64 32
+   ```
+
+2. **私有仓库使用 Deploy Key**
+   ```bash
+   # 运行自动配置脚本
+   ./setup-github-ssh.sh
+
+   # 或查看完整指南
+   cat WEBHOOK-GUIDE.md
    ```
 
 2. **使用 HTTPS**
