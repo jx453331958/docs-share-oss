@@ -130,14 +130,117 @@
         .sidebar h1 {
             font-size: 15px;
             font-weight: 700;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             color: var(--text-bright);
-            padding-bottom: 16px;
+            padding-bottom: 12px;
             border-bottom: 1px solid var(--border);
             letter-spacing: 0.5px;
             white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
         .sidebar h1 span { color: var(--accent); }
+
+        /* ── Search & Controls ── */
+        .sidebar-controls {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 8px 32px 8px 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 13px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: var(--bg-hover);
+        }
+
+        .search-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-clear {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+            display: none;
+            transition: color 0.2s;
+        }
+
+        .search-clear.visible {
+            display: block;
+        }
+
+        .search-clear:hover {
+            color: var(--accent);
+        }
+
+        .refresh-btn {
+            padding: 8px 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            justify-content: center;
+        }
+
+        .refresh-btn:hover {
+            border-color: var(--accent);
+            background: var(--bg-hover);
+            color: var(--accent);
+        }
+
+        .refresh-btn.loading {
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        .refresh-btn svg {
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+        }
+
+        .refresh-btn.loading svg {
+            animation: spin 1s linear infinite;
+        }
+
+        .doc-count {
+            font-size: 12px;
+            color: var(--text-muted);
+            padding: 0 4px;
+        }
 
         .doc-list { list-style: none; }
 
@@ -461,7 +564,29 @@
 
     <div class="container">
         <div class="sidebar" id="sidebar">
-            <h1><span>◆</span> 文档中心</h1>
+            <h1>
+                <span>◆</span> 文档中心
+                <span class="doc-count" id="docCount">0</span>
+            </h1>
+
+            <div class="sidebar-controls">
+                <div class="search-box">
+                    <input
+                        type="text"
+                        class="search-input"
+                        id="searchInput"
+                        placeholder="搜索文档..."
+                        autocomplete="off"
+                    >
+                    <button class="search-clear" id="searchClear" onclick="clearSearch()">×</button>
+                </div>
+
+                <button class="refresh-btn" id="refreshBtn" onclick="refreshDocs()">
+                    <svg viewBox="0 0 16 16"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/></svg>
+                    刷新
+                </button>
+            </div>
+
             <ul class="doc-list" id="docList"></ul>
         </div>
 
@@ -484,8 +609,10 @@
 
     <script>
         let docConfig = [];
+        let filteredDocs = [];
         const docs = {};
         let currentDoc = null;
+        let searchQuery = '';
 
         function toggleSidebarDesktop() {
             const sidebar = document.getElementById('sidebar');
@@ -553,13 +680,81 @@
             URL.revokeObjectURL(url);
         }
 
-        function initDocList() {
+        // ── Search ──
+        function filterDocs(query) {
+            searchQuery = query.toLowerCase().trim();
+            if (!searchQuery) {
+                filteredDocs = [...docConfig];
+            } else {
+                filteredDocs = docConfig.filter(doc =>
+                    doc.title.toLowerCase().includes(searchQuery) ||
+                    doc.desc.toLowerCase().includes(searchQuery) ||
+                    doc.file.toLowerCase().includes(searchQuery)
+                );
+            }
+            updateDocList();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchClear').classList.remove('visible');
+            filterDocs('');
+        }
+
+        function updateDocCount() {
+            const count = document.getElementById('docCount');
+            if (searchQuery) {
+                count.textContent = `${filteredDocs.length}/${docConfig.length}`;
+            } else {
+                count.textContent = docConfig.length;
+            }
+        }
+
+        // ── Refresh ──
+        async function refreshDocs() {
+            const btn = document.getElementById('refreshBtn');
+            btn.classList.add('loading');
+
+            try {
+                const res = await fetch('/api/docs?t=' + Date.now());
+                const list = await res.json();
+                docConfig = list.map(d => ({ file: d.file, title: d.title, desc: d.desc, path: './' }));
+                filterDocs(searchQuery);
+                console.log('✓ Refreshed docs list');
+            } catch (e) {
+                console.error('Failed to refresh:', e);
+            } finally {
+                btn.classList.remove('loading');
+            }
+        }
+
+        function updateDocList() {
             const docList = document.getElementById('docList');
             docList.innerHTML = '';
-            docConfig.forEach((doc, i) => {
+
+            if (filteredDocs.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;';
+                empty.textContent = searchQuery ? '未找到匹配的文档' : '暂无文档';
+                docList.appendChild(empty);
+                updateDocCount();
+                return;
+            }
+
+            filteredDocs.forEach((doc, i) => {
                 const li = document.createElement('li');
-                li.className = `doc-item${i === 0 ? ' active' : ''}`;
-                li.innerHTML = `<div class="doc-item-title">${doc.title}</div><div class="doc-item-desc">${doc.desc}</div>`;
+                li.className = `doc-item${i === 0 && !currentDoc ? ' active' : ''}`;
+
+                // Highlight search query
+                let titleHtml = doc.title;
+                let descHtml = doc.desc;
+                if (searchQuery) {
+                    const regex = new RegExp(`(${searchQuery})`, 'gi');
+                    titleHtml = titleHtml.replace(regex, '<mark style="background: var(--accent-glow); color: var(--accent);">$1</mark>');
+                    descHtml = descHtml.replace(regex, '<mark style="background: var(--accent-glow); color: var(--accent);">$1</mark>');
+                }
+
+                li.innerHTML = `<div class="doc-item-title">${titleHtml}</div><div class="doc-item-desc">${descHtml}</div>`;
                 li.onclick = () => {
                     document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('active'));
                     li.classList.add('active');
@@ -567,6 +762,13 @@
                 };
                 docList.appendChild(li);
             });
+
+            updateDocCount();
+        }
+
+        function initDocList() {
+            filteredDocs = [...docConfig];
+            updateDocList();
         }
 
         async function init() {
@@ -575,8 +777,29 @@
                 const list = await res.json();
                 docConfig = list.map(d => ({ file: d.file, title: d.title, desc: d.desc, path: './' }));
             } catch (e) { console.error('Failed to load doc list:', e); }
+
             initDocList();
-            if (docConfig.length > 0) renderDoc(docConfig[0].file, docConfig[0].path);
+
+            // Search input handler
+            const searchInput = document.getElementById('searchInput');
+            const searchClear = document.getElementById('searchClear');
+
+            searchInput.addEventListener('input', (e) => {
+                const value = e.target.value;
+                searchClear.classList.toggle('visible', value.length > 0);
+                filterDocs(value);
+            });
+
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    clearSearch();
+                }
+            });
+
+            // Auto-load first doc
+            if (filteredDocs.length > 0) {
+                renderDoc(filteredDocs[0].file, filteredDocs[0].path);
+            }
         }
         init();
     </script>

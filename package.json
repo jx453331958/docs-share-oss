@@ -4,9 +4,13 @@
   "description": "零配置 Markdown 文档站，扔进 .md 文件即可访问",
   "type": "module",
   "main": "server.mjs",
+  "bin": {
+    "docs-share": "./cli.mjs"
+  },
   "scripts": {
     "start": "node server.mjs",
-    "dev": "node --watch server.mjs"
+    "dev": "node --watch server.mjs",
+    "cli": "node cli.mjs"
   },
   "keywords": ["docs", "markdown", "viewer", "self-hosted", "docker"],
   "license": "MIT",

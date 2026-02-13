@@ -1,0 +1,4 @@
+{
+  "server": "http://localhost:3457",
+  "apiKey": "your-secret-api-key-here"
+}

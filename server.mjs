@@ -1,9 +1,16 @@
 import { createServer } from 'http';
-import { readdir, readFile, stat } from 'fs/promises';
+import { readdir, readFile, stat, writeFile, unlink } from 'fs/promises';
 import { join, extname } from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-const PORT = 3457;
+const execAsync = promisify(exec);
+
+const PORT = process.env.PORT || 3457;
 const DOCS_DIR = join(import.meta.dirname, 'docs');
+const API_KEY = process.env.API_KEY || 'dev-key-change-in-production';
+const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
+const GIT_REPO_PATH = process.env.GIT_REPO_PATH || import.meta.dirname;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -15,6 +22,60 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
 };
+
+// ── Auth Middleware ──
+function requireAuth(req) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace(/^Bearer\s+/i, '');
+  return token === API_KEY;
+}
+
+// ── Parse JSON body ──
+async function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => body += chunk.toString());
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (e) {
+        reject(new Error('Invalid JSON'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+// ── Parse multipart form data (simple) ──
+async function parseMultipart(req) {
+  const boundary = req.headers['content-type']?.match(/boundary=(.+)$/)?.[1];
+  if (!boundary) throw new Error('No boundary in multipart');
+
+  return new Promise((resolve, reject) => {
+    let buffer = Buffer.alloc(0);
+    req.on('data', chunk => buffer = Buffer.concat([buffer, chunk]));
+    req.on('end', () => {
+      try {
+        const parts = buffer.toString('binary').split(`--${boundary}`);
+        const files = {};
+
+        for (const part of parts) {
+          const match = part.match(/name="([^"]+)"(?:; filename="([^"]+)")?\r?\n(?:Content-Type: ([^\r\n]+))?\r?\n\r?\n([\s\S]*?)(?:\r?\n)?$/);
+          if (match) {
+            const [, name, filename, , content] = match;
+            if (filename) {
+              files[name] = { filename, content: content.trim() };
+            }
+          }
+        }
+        resolve(files);
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
+}
 
 // Title extraction: first # heading or filename
 async function extractMeta(filepath, filename) {
@@ -32,13 +93,107 @@ async function extractMeta(filepath, filename) {
   }
 }
 
-async function handleApiDocs(res) {
+async function handleApiDocs(req, res) {
   const files = await readdir(DOCS_DIR);
   const mdFiles = files.filter(f => f.endsWith('.md'));
   const docs = await Promise.all(mdFiles.map(f => extractMeta(join(DOCS_DIR, f), f)));
   docs.sort((a, b) => b.mtime - a.mtime); // newest first
   res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(docs));
+}
+
+// ── POST /api/docs - Upload document ──
+async function handleUploadDoc(req, res) {
+  if (!requireAuth(req)) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+
+  try {
+    let filename, content;
+
+    if (req.headers['content-type']?.includes('application/json')) {
+      const body = await parseBody(req);
+      filename = body.filename;
+      content = body.content;
+    } else if (req.headers['content-type']?.includes('multipart/form-data')) {
+      const files = await parseMultipart(req);
+      const file = files.file;
+      if (!file) throw new Error('No file uploaded');
+      filename = file.filename;
+      content = file.content;
+    } else {
+      throw new Error('Unsupported content type');
+    }
+
+    if (!filename?.endsWith('.md')) {
+      throw new Error('Only .md files allowed');
+    }
+
+    // Sanitize filename
+    filename = filename.replace(/[^a-zA-Z0-9._\u4e00-\u9fa5-]/g, '_');
+    const filepath = join(DOCS_DIR, filename);
+
+    await writeFile(filepath, content, 'utf-8');
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, filename, message: 'Document uploaded' }));
+  } catch (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
+// ── DELETE /api/docs/:filename ──
+async function handleDeleteDoc(req, res, filename) {
+  if (!requireAuth(req)) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+
+  try {
+    if (!filename?.endsWith('.md')) {
+      throw new Error('Only .md files can be deleted');
+    }
+
+    const filepath = join(DOCS_DIR, filename);
+    if (!filepath.startsWith(DOCS_DIR)) {
+      throw new Error('Invalid filename');
+    }
+
+    await unlink(filepath);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, message: 'Document deleted' }));
+  } catch (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
+// ── POST /api/webhook - Git webhook ──
+async function handleWebhook(req, res) {
+  if (!ENABLE_WEBHOOK) {
+    res.writeHead(404);
+    res.end('Webhook disabled');
+    return;
+  }
+
+  try {
+    console.log('[Webhook] Received push event, pulling latest changes...');
+    const { stdout, stderr } = await execAsync('git pull', { cwd: GIT_REPO_PATH });
+    console.log('[Webhook] Git pull output:', stdout);
+    if (stderr) console.error('[Webhook] Git pull stderr:', stderr);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, message: 'Updated from git', output: stdout }));
+  } catch (error) {
+    console.error('[Webhook] Error:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
 }
 
 async function serveStatic(req, res) {
@@ -66,10 +221,58 @@ async function serveStatic(req, res) {
 }
 
 const server = createServer(async (req, res) => {
-  if (req.url === '/api/docs') return handleApiDocs(res);
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const pathname = url.pathname;
+
+  // CORS headers for API endpoints
+  if (pathname.startsWith('/api/')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+  }
+
+  // API Routes
+  if (pathname === '/api/docs' && req.method === 'GET') {
+    return handleApiDocs(req, res);
+  }
+
+  if (pathname === '/api/docs' && req.method === 'POST') {
+    return handleUploadDoc(req, res);
+  }
+
+  if (pathname.startsWith('/api/docs/') && req.method === 'DELETE') {
+    const filename = decodeURIComponent(pathname.replace('/api/docs/', ''));
+    return handleDeleteDoc(req, res, filename);
+  }
+
+  if (pathname === '/api/webhook' && req.method === 'POST') {
+    return handleWebhook(req, res);
+  }
+
+  // Static files
   return serveStatic(req, res);
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`docs-share running on http://0.0.0.0:${PORT}`);
+  console.log(`\n📚 Docs Share Server`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`🌐 Server:    http://0.0.0.0:${PORT}`);
+  console.log(`📁 Docs dir:  ${DOCS_DIR}`);
+  console.log(`🔑 API Key:   ${API_KEY === 'dev-key-change-in-production' ? '⚠️  Using default key (CHANGE IN PRODUCTION!)' : '✓ Custom key set'}`);
+  console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+  console.log(`API Endpoints:`);
+  console.log(`  GET    /api/docs          - List all documents`);
+  console.log(`  POST   /api/docs          - Upload document (requires auth)`);
+  console.log(`  DELETE /api/docs/:file    - Delete document (requires auth)`);
+  if (ENABLE_WEBHOOK) {
+    console.log(`  POST   /api/webhook       - Git webhook handler`);
+  }
+  console.log();
 });
