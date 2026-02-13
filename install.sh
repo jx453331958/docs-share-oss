@@ -181,7 +181,7 @@ EOF
     fi
 
     # 生成 API Key
-    API_KEY=$(openssl rand -base64 32 2>/dev/null || echo "change-this-in-production")
+    API_KEY=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)
 
     # 创建 docker-compose.yml
     cat > "$DATA_DIR/docker-compose.yml" << EOF
@@ -206,9 +206,15 @@ EOF
     echo ""
     info "配置文件: $DATA_DIR/docker-compose.yml"
     info "文档目录: $DATA_DIR/docs"
-    info "API Key: $API_KEY"
     echo ""
-    warning "请妥善保管 API Key，用于远程上传文档"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔑 API Key (已自动生成，请保存):"
+    echo ""
+    echo "   $API_KEY"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    warning "用于 REST API 调用，请妥善保管"
+    info "查看配置: cat $DATA_DIR/docker-compose.yml"
     echo ""
 
     # 启动
@@ -277,7 +283,7 @@ configure_env() {
     info "配置环境变量..."
 
     # 生成 API Key
-    API_KEY=$(openssl rand -base64 32 2>/dev/null || echo "change-this-in-production")
+    API_KEY=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)
 
     cat > "$INSTALL_DIR/.env" << EOF
 # Docs Share 配置文件
@@ -295,17 +301,17 @@ ENABLE_WEBHOOK=false
 
 EOF
 
-    # 创建 CLI 配置
-    cat > "$HOME/.docsrc.json" << EOF
-{
-  "server": "http://localhost:3457",
-  "apiKey": "$API_KEY"
-}
-EOF
-
     success "配置完成"
-    info "API Key: $API_KEY"
-    warning "请妥善保管 API Key，用于 REST API 调用"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔑 API Key (已自动生成，请保存):"
+    echo ""
+    echo "   $API_KEY"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    warning "用于 REST API 调用，请妥善保管"
+    info "配置文件: $INSTALL_DIR/.env"
+    echo ""
 }
 
 # 更新

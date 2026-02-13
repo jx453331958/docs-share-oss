@@ -3,14 +3,23 @@ import { readdir, readFile, stat, writeFile, unlink } from 'fs/promises';
 import { join, extname } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { randomBytes } from 'crypto';
 
 const execAsync = promisify(exec);
 
+// 自动生成 API Key（如果未设置）
+function generateApiKey() {
+  return randomBytes(32).toString('base64');
+}
+
 const PORT = process.env.PORT || 3457;
 const DOCS_DIR = join(import.meta.dirname, 'docs');
-const API_KEY = process.env.API_KEY || 'dev-key-change-in-production';
+const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || import.meta.dirname;
+
+// 首次启动时保存生成的 API Key
+const isFirstRun = !process.env.API_KEY;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -259,12 +268,37 @@ const server = createServer(async (req, res) => {
   return serveStatic(req, res);
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', async () => {
   console.log(`\n📚 Docs Share Server`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`🌐 Server:    http://0.0.0.0:${PORT}`);
   console.log(`📁 Docs dir:  ${DOCS_DIR}`);
-  console.log(`🔑 API Key:   ${API_KEY === 'dev-key-change-in-production' ? '⚠️  Using default key (CHANGE IN PRODUCTION!)' : '✓ Custom key set'}`);
+
+  if (isFirstRun) {
+    console.log(`🔑 API Key:   ${API_KEY}`);
+    console.log(`⚠️  AUTO-GENERATED! Please save this key.`);
+
+    // 尝试保存到 .env 文件
+    const envPath = join(import.meta.dirname, '.env');
+    try {
+      const envContent = `# Docs Share Configuration
+# Auto-generated on first run: ${new Date().toISOString()}
+
+PORT=${PORT}
+API_KEY=${API_KEY}
+ENABLE_WEBHOOK=false
+`;
+      await writeFile(envPath, envContent, { flag: 'wx' }); // wx = 只在文件不存在时写入
+      console.log(`✓ Saved to: ${envPath}`);
+    } catch (err) {
+      if (err.code !== 'EEXIST') {
+        console.log(`⚠️  Could not save .env file (please save the key manually)`);
+      }
+    }
+  } else {
+    console.log(`🔑 API Key:   ✓ Loaded from environment`);
+  }
+
   console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
   console.log(`API Endpoints:`);
