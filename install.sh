@@ -243,10 +243,14 @@ EOF
 
     # 4. 配置 Webhook（Docker 模式）
     info "4. Git Webhook 配置"
-    configure_webhook_docker
+    if configure_webhook_docker; then
+        success "Webhook 配置成功"
+    else
+        warning "Webhook 配置失败，已跳过（不影响基本功能）"
+    fi
 
     echo ""
-    success "✅ 所有配置已完成！"
+    success "✅ 基础配置已完成！"
     echo ""
 
     # 启动
@@ -392,7 +396,7 @@ configure_webhook_docker() {
 
     if [[ "$enable_webhook" != "y" && "$enable_webhook" != "Y" ]]; then
         info "跳过 Webhook 配置"
-        return
+        return 0
     fi
 
     echo ""
@@ -400,13 +404,24 @@ configure_webhook_docker() {
 
     if [ -z "$REPO" ]; then
         warning "未输入仓库地址，跳过 Webhook 配置"
-        return
+        return 0
     fi
 
     # 标准化仓库地址：支持完整 URL 或 username/repo 格式
-    # 移除可能的 https://github.com/ 前缀和 .git 后缀
-    REPO=$(echo "$REPO" | sed -e 's|^https\?://github.com/||' -e 's|\.git$||')
-    info "仓库: $REPO"
+    # 移除可能的 https:// 或 http:// 或 git@ 前缀
+    REPO=$(echo "$REPO" | sed -E \
+        -e 's|^(https?://)?github\.com/||' \
+        -e 's|^git@github\.com:||' \
+        -e 's|\.git$||')
+
+    # 验证格式是否正确 (应该是 username/repo)
+    if ! echo "$REPO" | grep -qE '^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$'; then
+        error "仓库地址格式不正确: $REPO"
+        warning "正确格式: username/repo (例如: jx453331958/my-docs)"
+        return 1
+    fi
+
+    success "仓库: $REPO"
 
     echo ""
     read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
@@ -443,9 +458,11 @@ configure_webhook_docker() {
         if [ ! -d "$DOCS_REPO_PATH" ]; then
             info "克隆私有仓库..."
             HOST_NAME="github-${REPO//\//-}"
-            git clone "$HOST_NAME:$REPO.git" "$DOCS_REPO_PATH" || {
+            info "使用 SSH 主机: $HOST_NAME"
+            git clone "$HOST_NAME:$REPO.git" "$DOCS_REPO_PATH" 2>&1 || {
                 error "克隆失败，请检查 SSH 配置"
-                return
+                error "命令: git clone $HOST_NAME:$REPO.git $DOCS_REPO_PATH"
+                return 1
             }
             success "仓库克隆完成"
         fi
@@ -453,9 +470,10 @@ configure_webhook_docker() {
         # 公开仓库，直接使用 HTTPS 克隆
         if [ ! -d "$DOCS_REPO_PATH" ]; then
             info "克隆公开仓库..."
-            git clone "https://github.com/$REPO.git" "$DOCS_REPO_PATH" || {
+            git clone "https://github.com/$REPO.git" "$DOCS_REPO_PATH" 2>&1 || {
                 error "克隆失败"
-                return
+                error "命令: git clone https://github.com/$REPO.git $DOCS_REPO_PATH"
+                return 1
             }
             success "仓库克隆完成"
         fi
@@ -471,7 +489,8 @@ configure_webhook_docker() {
     # 检查文档目录是否存在
     if [ ! -d "$ACTUAL_DOCS_DIR" ]; then
         error "文档目录不存在: $ACTUAL_DOCS_DIR"
-        return
+        error "请检查仓库克隆是否成功，或文档子目录路径是否正确"
+        return 1
     fi
 
     # 统计文档数量
@@ -562,7 +581,7 @@ configure_webhook() {
     if [[ "$enable_webhook" != "y" && "$enable_webhook" != "Y" ]]; then
         echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
         info "跳过 Webhook 配置"
-        return
+        return 0
     fi
 
     echo ""
@@ -571,13 +590,25 @@ configure_webhook() {
     if [ -z "$REPO" ]; then
         warning "未输入仓库地址，跳过 Webhook 配置"
         echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
-        return
+        return 0
     fi
 
     # 标准化仓库地址：支持完整 URL 或 username/repo 格式
-    # 移除可能的 https://github.com/ 前缀和 .git 后缀
-    REPO=$(echo "$REPO" | sed -e 's|^https\?://github.com/||' -e 's|\.git$||')
-    info "仓库: $REPO"
+    # 移除可能的 https:// 或 http:// 或 git@ 前缀
+    REPO=$(echo "$REPO" | sed -E \
+        -e 's|^(https?://)?github\.com/||' \
+        -e 's|^git@github\.com:||' \
+        -e 's|\.git$||')
+
+    # 验证格式是否正确 (应该是 username/repo)
+    if ! echo "$REPO" | grep -qE '^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$'; then
+        error "仓库地址格式不正确: $REPO"
+        warning "正确格式: username/repo (例如: jx453331958/my-docs)"
+        echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
+        return 1
+    fi
+
+    success "仓库: $REPO"
 
     echo ""
     read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
@@ -630,10 +661,12 @@ configure_webhook() {
         if [ ! -d "$DOCS_REPO_PATH" ]; then
             info "克隆私有仓库..."
             HOST_NAME="github-${REPO//\//-}"
-            git clone "$HOST_NAME:$REPO.git" "$DOCS_REPO_PATH" || {
+            info "使用 SSH 主机: $HOST_NAME"
+            git clone "$HOST_NAME:$REPO.git" "$DOCS_REPO_PATH" 2>&1 || {
                 error "克隆失败，请检查 SSH 配置"
+                error "命令: git clone $HOST_NAME:$REPO.git $DOCS_REPO_PATH"
                 echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
-                return
+                return 1
             }
             success "仓库克隆完成"
         fi
@@ -641,10 +674,11 @@ configure_webhook() {
         # 公开仓库，直接使用 HTTPS 克隆
         if [ ! -d "$DOCS_REPO_PATH" ]; then
             info "克隆公开仓库..."
-            git clone "https://github.com/$REPO.git" "$DOCS_REPO_PATH" || {
+            git clone "https://github.com/$REPO.git" "$DOCS_REPO_PATH" 2>&1 || {
                 error "克隆失败"
+                error "命令: git clone https://github.com/$REPO.git $DOCS_REPO_PATH"
                 echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
-                return
+                return 1
             }
             success "仓库克隆完成"
         fi
@@ -660,8 +694,9 @@ configure_webhook() {
     # 检查文档目录是否存在
     if [ ! -d "$ACTUAL_DOCS_DIR" ]; then
         error "文档目录不存在: $ACTUAL_DOCS_DIR"
+        error "请检查仓库克隆是否成功，或文档子目录路径是否正确"
         echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
-        return
+        return 1
     fi
 
     # 统计文档数量
