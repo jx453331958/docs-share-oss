@@ -334,10 +334,18 @@ EOF
     info "4. Git Webhook 配置"
 
     while true; do
-        if configure_webhook_docker; then
+        configure_webhook_docker
+        local result=$?
+
+        if [ $result -eq 2 ]; then
+            # 用户选择跳过
+            break
+        elif [ $result -eq 0 ]; then
+            # 配置成功
             success "Webhook 配置成功"
             break
         else
+            # 配置失败
             echo ""
             warning "Webhook 配置失败"
             echo ""
@@ -347,7 +355,8 @@ EOF
             echo "  - 网络连接问题"
             echo "  - 仓库不存在或无权限访问"
             echo ""
-            read -p "是否重试 Webhook 配置？[y/N] " retry_webhook < /dev/tty
+            read -p "是否重试 Webhook 配置？[默认 N] " retry_webhook < /dev/tty
+            retry_webhook=${retry_webhook:-N}
 
             if [[ "$retry_webhook" != "y" && "$retry_webhook" != "Y" ]]; then
                 warning "已跳过 Webhook 配置（不影响基本功能）"
@@ -368,7 +377,8 @@ EOF
     echo ""
 
     # 启动
-    read -p "是否现在启动服务？[Y/n] " start_now < /dev/tty
+    read -p "是否现在启动服务？[Y/n, 默认 Y] " start_now < /dev/tty
+    start_now=${start_now:-Y}
     if [[ "$start_now" != "n" && "$start_now" != "N" ]]; then
         cd "$DATA_DIR"
         docker compose up -d
@@ -407,7 +417,8 @@ install_pm2() {
     echo ""
 
     # 设置开机自启
-    read -p "是否设置开机自启？[Y/n] " setup_startup < /dev/tty
+    read -p "是否设置开机自启？[Y/n, 默认 Y] " setup_startup < /dev/tty
+    setup_startup=${setup_startup:-Y}
     if [[ "$setup_startup" != "n" && "$setup_startup" != "N" ]]; then
         pm2 startup
         success "开机自启已配置"
@@ -442,7 +453,8 @@ configure_auth_docker() {
     echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
-    read -p "是否启用鉴权？[Y/n] " enable_auth < /dev/tty
+    read -p "是否启用鉴权？[Y/n, 默认 Y] " enable_auth < /dev/tty
+    enable_auth=${enable_auth:-Y}
 
     if [[ "$enable_auth" == "n" || "$enable_auth" == "N" ]]; then
         warning "已禁用鉴权，文档站将公开访问"
@@ -506,11 +518,12 @@ configure_webhook_docker() {
     echo "  - 将文档托管在 Git 仓库（GitHub/GitLab）"
     echo "  - 推送代码后，服务器自动执行 git pull 更新文档"
     echo ""
-    read -p "是否启用 Webhook？[y/N] " enable_webhook < /dev/tty
+    read -p "是否启用 Webhook？[默认 N] " enable_webhook < /dev/tty
+    enable_webhook=${enable_webhook:-N}
 
     if [[ "$enable_webhook" != "y" && "$enable_webhook" != "Y" ]]; then
         info "跳过 Webhook 配置"
-        return 0
+        return 2
     fi
 
     echo ""
@@ -543,7 +556,8 @@ configure_webhook_docker() {
     success "仓库: $REPO"
 
     echo ""
-    read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
+    read -p "这是私有仓库吗？[y/N, 默认 N] " is_private < /dev/tty
+    is_private=${is_private:-N}
 
     # 文档仓库路径
     DOCS_REPO_PATH="$HOME/${REPO##*/}"
@@ -734,12 +748,13 @@ configure_webhook() {
     echo "  - 将文档托管在 Git 仓库（GitHub/GitLab）"
     echo "  - 推送代码后，服务器自动执行 git pull 更新文档"
     echo ""
-    read -p "是否启用 Webhook？[y/N] " enable_webhook < /dev/tty
+    read -p "是否启用 Webhook？[默认 N] " enable_webhook < /dev/tty
+    enable_webhook=${enable_webhook:-N}
 
     if [[ "$enable_webhook" != "y" && "$enable_webhook" != "Y" ]]; then
         echo "ENABLE_WEBHOOK=false" >> "$INSTALL_DIR/.env"
         info "跳过 Webhook 配置"
-        return 0
+        return 2
     fi
 
     echo ""
@@ -774,7 +789,8 @@ configure_webhook() {
     success "仓库: $REPO"
 
     echo ""
-    read -p "这是私有仓库吗？[y/N] " is_private < /dev/tty
+    read -p "这是私有仓库吗？[y/N, 默认 N] " is_private < /dev/tty
+    is_private=${is_private:-N}
 
     # 询问文档仓库克隆位置
     echo ""
@@ -978,7 +994,8 @@ configure_auth() {
     echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
-    read -p "是否启用鉴权？[Y/n] " enable_auth < /dev/tty
+    read -p "是否启用鉴权？[Y/n, 默认 Y] " enable_auth < /dev/tty
+    enable_auth=${enable_auth:-Y}
 
     if [[ "$enable_auth" == "n" || "$enable_auth" == "N" ]]; then
         cat >> "$INSTALL_DIR/.env" << EOF
@@ -1194,10 +1211,18 @@ EOF
     info "4. Git Webhook 配置"
 
     while true; do
-        if configure_webhook; then
+        configure_webhook
+        local result=$?
+
+        if [ $result -eq 2 ]; then
+            # 用户选择跳过
+            break
+        elif [ $result -eq 0 ]; then
+            # 配置成功
             success "Webhook 配置成功"
             break
         else
+            # 配置失败
             echo ""
             warning "Webhook 配置失败"
             echo ""
@@ -1207,7 +1232,8 @@ EOF
             echo "  - 网络连接问题"
             echo "  - 仓库不存在或无权限访问"
             echo ""
-            read -p "是否重试 Webhook 配置？[y/N] " retry_webhook < /dev/tty
+            read -p "是否重试 Webhook 配置？[默认 N] " retry_webhook < /dev/tty
+            retry_webhook=${retry_webhook:-N}
 
             if [[ "$retry_webhook" != "y" && "$retry_webhook" != "Y" ]]; then
                 warning "已跳过 Webhook 配置（不影响基本功能）"
@@ -1269,7 +1295,8 @@ update() {
     # 重启服务
     if pgrep -f "node.*server.mjs" > /dev/null; then
         info "检测到服务正在运行，建议重启"
-        read -p "是否现在重启？[Y/n] " restart_now < /dev/tty
+        read -p "是否现在重启？[Y/n, 默认 Y] " restart_now < /dev/tty
+        restart_now=${restart_now:-Y}
         if [[ "$restart_now" != "n" && "$restart_now" != "N" ]]; then
             restart_service
         fi
@@ -1342,7 +1369,8 @@ stop_service() {
         warning "检测到手动启动的进程，未自动停止："
         echo "$manual_procs" | awk '{print "  PID " $2 ": " $NF}'
         echo ""
-        read -p "是否停止这些进程？[y/N] " kill_manual < /dev/tty
+        read -p "是否停止这些进程？[y/N, 默认 N] " kill_manual < /dev/tty
+        kill_manual=${kill_manual:-N}
         if [[ "$kill_manual" == "y" || "$kill_manual" == "Y" ]]; then
             echo "$manual_procs" | awk '{print $2}' | while read pid; do
                 kill -9 "$pid" 2>/dev/null && success "已停止进程: $pid" || warning "无法停止进程: $pid"
@@ -1495,8 +1523,10 @@ uninstall() {
     fi
 
     echo ""
-    read -p "是否保留文档数据？[Y/n] " keep_data < /dev/tty
-    read -p "确认卸载？[y/N] " confirm < /dev/tty
+    read -p "是否保留文档数据？[Y/n, 默认 Y] " keep_data < /dev/tty
+    keep_data=${keep_data:-Y}
+    read -p "确认卸载？[y/N, 默认 N] " confirm < /dev/tty
+    confirm=${confirm:-N}
 
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "取消卸载"
@@ -1525,7 +1555,8 @@ uninstall() {
     # 删除 Git 仓库（如果有）
     if [ ${#git_repos[@]} -gt 0 ]; then
         echo ""
-        read -p "是否删除克隆的 Git 仓库？[y/N] " delete_repos < /dev/tty
+        read -p "是否删除克隆的 Git 仓库？[y/N, 默认 N] " delete_repos < /dev/tty
+        delete_repos=${delete_repos:-N}
         if [[ "$delete_repos" == "y" || "$delete_repos" == "Y" ]]; then
             for repo in "${git_repos[@]}"; do
                 rm -rf "$repo"
@@ -1539,7 +1570,8 @@ uninstall() {
     # 删除 SSH 密钥（如果有）
     if [ ${#ssh_keys[@]} -gt 0 ]; then
         echo ""
-        read -p "是否删除生成的 SSH Deploy Keys？[y/N] " delete_keys < /dev/tty
+        read -p "是否删除生成的 SSH Deploy Keys？[y/N, 默认 N] " delete_keys < /dev/tty
+        delete_keys=${delete_keys:-N}
         if [[ "$delete_keys" == "y" || "$delete_keys" == "Y" ]]; then
             for key in "${ssh_keys[@]}"; do
                 rm -f "$key" "$key.pub"
