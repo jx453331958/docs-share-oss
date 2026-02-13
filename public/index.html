@@ -81,7 +81,7 @@
             padding: 24px 16px;
             overflow-y: auto;
             overflow-x: hidden;
-            transition: width var(--transition), padding var(--transition), opacity var(--transition);
+            transition: width var(--transition), padding var(--transition);
             flex-shrink: 0;
             position: relative;
         }
@@ -622,6 +622,7 @@
                 padding: 20px !important;
                 border-right: 1px solid var(--border) !important;
                 overflow: auto !important;
+                overscroll-behavior: contain;
             }
             .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
 
@@ -927,6 +928,13 @@
         // ── Lazy Doc List Rendering ──
         function renderDocList() {
             const docList = document.getElementById('docList');
+            const sidebar = document.getElementById('sidebar');
+            const scrollTop = sidebar.scrollTop;
+
+            // 锁定列表高度，防止替换期间高度塌缩导致抖动
+            const prevHeight = docList.offsetHeight;
+            docList.style.minHeight = prevHeight + 'px';
+
             displayedCount = 0;
 
             if (sortedDocs.length === 0) {
@@ -934,12 +942,15 @@
                 empty.style.cssText = 'padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;';
                 empty.textContent = searchQuery ? '未找到匹配的文档' : '暂无文档';
                 docList.replaceChildren(empty);
+                docList.style.minHeight = '';
                 updateDocCount();
                 document.getElementById('loadSentinel').style.display = 'none';
                 return;
             }
 
             loadMoreDocs(true);
+            sidebar.scrollTop = scrollTop;
+            docList.style.minHeight = '';
             updateDocCount();
             setupLazyLoad();
         }
