@@ -112,8 +112,8 @@ install() {
             ;;
         2)
             echo ""
-            read -p "安装目录 (程序文件): " custom_install_dir < /dev/tty
-            read -p "数据目录 (文档和配置): " custom_data_dir < /dev/tty
+            read -p "安装目录 (程序文件) [默认: $(pwd)/install]: " custom_install_dir < /dev/tty
+            read -p "数据目录 (文档和配置) [默认: $(pwd)/data]: " custom_data_dir < /dev/tty
             INSTALL_DIR="${custom_install_dir:-$(pwd)/install}"
             DATA_DIR="${custom_data_dir:-$(pwd)/data}"
             ;;
@@ -136,7 +136,8 @@ install() {
     echo "  1) Docker 容器运行（推荐）"
     echo "  2) PM2 进程管理（需要 Node.js >= 20）"
     echo ""
-    read -p "请选择 [1-2]: " mode < /dev/tty
+    read -p "请选择 [1-2, 默认 1]: " mode < /dev/tty
+    mode=${mode:-1}
 
     case $mode in
         1) install_docker ;;
@@ -507,7 +508,7 @@ configure_webhook_docker() {
         1) DOCS_SUBDIR="." ;;
         2) DOCS_SUBDIR="docs" ;;
         3)
-            read -p "请输入文档所在子目录（如: documents）: " custom_dir < /dev/tty
+            read -p "请输入文档所在子目录 [默认: . (根目录)]: " custom_dir < /dev/tty
             DOCS_SUBDIR="${custom_dir:-.}"
             ;;
         *) DOCS_SUBDIR="." ;;
@@ -754,7 +755,7 @@ configure_webhook() {
         1) DOCS_SUBDIR="." ;;
         2) DOCS_SUBDIR="docs" ;;
         3)
-            read -p "请输入文档所在子目录（如: documents）: " custom_dir < /dev/tty
+            read -p "请输入文档所在子目录 [默认: . (根目录)]: " custom_dir < /dev/tty
             DOCS_SUBDIR="${custom_dir:-.}"
             ;;
         *) DOCS_SUBDIR="." ;;
