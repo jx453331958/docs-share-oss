@@ -31,15 +31,21 @@
 
 全自动安装、配置、更新：
 
+**方式一：在线安装（快速）**
 ```bash
-# 下载并运行安装脚本
 curl -fsSL https://raw.githubusercontent.com/jx453331958/docs-share-oss/main/install.sh | bash
+```
+适合快速尝试，运行后选择交互式菜单即可。
 
-# 或克隆后运行
+**方式二：克隆后安装（推荐）**
+```bash
 git clone https://github.com/jx453331958/docs-share-oss.git
 cd docs-share-oss
 ./install.sh
 ```
+适合需要频繁管理的场景，支持本地命令操作。
+
+---
 
 **支持功能：**
 - ✅ 首次安装（Docker / PM2）
@@ -56,14 +62,18 @@ cd docs-share-oss
 2) PM2 进程管理 - 生产级进程守护，开机自启
 ```
 
-**常用命令：**
+**常用命令（需先克隆仓库）：**
 ```bash
-./install.sh install  # 安装（交互式选择模式）
-./install.sh update   # 更新到最新版
-./install.sh start    # 启动服务
-./install.sh status   # 查看状态
-./install.sh logs     # 查看日志
+./install.sh         # 显示交互式菜单
+./install.sh install # 安装（交互式选择模式）
+./install.sh update  # 更新到最新版
+./install.sh config  # 重新配置（如 Webhook）
+./install.sh start   # 启动服务
+./install.sh status  # 查看状态
+./install.sh logs    # 查看日志
 ```
+
+💡 **提示：** 如使用在线安装方式，需要管理服务时可重新运行 curl 命令并选择对应菜单项。
 
 **完整安装流程示例：**
 

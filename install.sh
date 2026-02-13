@@ -262,7 +262,10 @@ EOF
 
             if [[ "$retry_webhook" != "y" && "$retry_webhook" != "Y" ]]; then
                 warning "已跳过 Webhook 配置（不影响基本功能）"
-                info "稍后可运行 ./install.sh config 重新配置"
+                echo ""
+                info "稍后可重新配置 Webhook："
+                echo "  curl -fsSL https://raw.githubusercontent.com/jx453331958/docs-share-oss/main/install.sh | bash"
+                echo "  选择菜单中的 '8) 配置管理'"
                 break
             fi
 
@@ -1016,7 +1019,10 @@ EOF
 
             if [[ "$retry_webhook" != "y" && "$retry_webhook" != "Y" ]]; then
                 warning "已跳过 Webhook 配置（不影响基本功能）"
-                info "稍后可运行 ./install.sh config 重新配置"
+                echo ""
+                info "稍后可重新配置 Webhook："
+                echo "  curl -fsSL https://raw.githubusercontent.com/jx453331958/docs-share-oss/main/install.sh | bash"
+                echo "  选择菜单中的 '8) 配置管理'"
                 break
             fi
 
