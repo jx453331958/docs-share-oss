@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:24-alpine
 
 LABEL org.opencontainers.image.source="https://github.com/jx453331958/docs-share"
 LABEL org.opencontainers.image.description="零配置 Markdown 文档站"

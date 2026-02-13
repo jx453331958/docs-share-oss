@@ -555,7 +555,7 @@ curl -X POST "$SERVER/api/docs" \
 
 ### CI（`ci.yml`）
 - 触发：push 到 main / PR
-- 内容：Node 18/20/22 多版本测试 + Docker 构建测试
+- 内容：Node 20/22/24 LTS 多版本测试 + Docker 构建测试
 
 ### Docker 发布（`docker-publish.yml`）
 - 触发：push tag（如 `v1.0.0`）

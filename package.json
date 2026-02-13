@@ -19,6 +19,6 @@
   "homepage": "https://github.com/jx453331958/docs-share-oss#readme",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }
