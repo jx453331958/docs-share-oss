@@ -1,0 +1,9 @@
+services:
+  docs-share:
+    build: .
+    container_name: docs-share
+    ports:
+      - "3457:3457"
+    volumes:
+      - ./docs:/app/docs
+    restart: unless-stopped

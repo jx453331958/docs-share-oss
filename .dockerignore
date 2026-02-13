@@ -1,0 +1,11 @@
+node_modules
+logs
+*.log
+.env
+.git
+.github
+.gitignore
+.dockerignore
+README.md
+LICENSE
+docker-compose.yml

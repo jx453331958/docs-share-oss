@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Start server & health check
+        run: |
+          node server.mjs &
+          sleep 2
+          curl -f http://localhost:3457/ || exit 1
+          curl -f http://localhost:3457/api/docs || exit 1
+          echo "✅ Server healthy on Node ${{ matrix.node-version }}"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t docs-share:test .
+
+      - name: Run & health check
+        run: |
+          docker run -d -p 3457:3457 -v $PWD/docs:/app/docs --name test docs-share:test
+          sleep 2
+          curl -f http://localhost:3457/ || exit 1
+          curl -f http://localhost:3457/api/docs || exit 1
+          echo "✅ Docker image healthy"

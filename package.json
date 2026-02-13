@@ -1,0 +1,16 @@
+{
+  "name": "docs-share",
+  "version": "1.0.0",
+  "description": "零配置 Markdown 文档站，扔进 .md 文件即可访问",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "keywords": ["docs", "markdown", "viewer", "self-hosted", "docker"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
