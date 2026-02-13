@@ -282,17 +282,18 @@ install_pm2() {
 # 配置访问鉴权（Docker 模式）
 configure_auth_docker() {
     echo ""
-    info "是否需要启用访问鉴权？"
+    info "访问鉴权配置（保护私有文档）"
     echo ""
     echo "功能说明："
-    echo "  - 启用后，访问文档站需要输入用户名和密码"
+    echo "  - 默认启用访问鉴权，保护私有文档"
+    echo "  - 访问文档站需要输入用户名和密码"
     echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
-    read -p "是否启用鉴权？[y/N] " enable_auth
+    read -p "是否启用鉴权？[Y/n] " enable_auth
 
-    if [[ "$enable_auth" != "y" && "$enable_auth" != "Y" ]]; then
-        info "跳过鉴权配置（公开访问）"
+    if [[ "$enable_auth" == "n" || "$enable_auth" == "N" ]]; then
+        warning "已禁用鉴权，文档站将公开访问"
         return
     fi
 
@@ -681,22 +682,23 @@ EOF
 # 配置访问鉴权
 configure_auth() {
     echo ""
-    info "是否需要启用访问鉴权？"
+    info "访问鉴权配置（保护私有文档）"
     echo ""
     echo "功能说明："
-    echo "  - 启用后，访问文档站需要输入用户名和密码"
+    echo "  - 默认启用访问鉴权，保护私有文档"
+    echo "  - 访问文档站需要输入用户名和密码"
     echo "  - 使用 HTTP Basic Auth（浏览器原生支持）"
     echo "  - 不影响 API 调用（API 仍使用 Bearer Token）"
     echo ""
-    read -p "是否启用鉴权？[y/N] " enable_auth
+    read -p "是否启用鉴权？[Y/n] " enable_auth
 
-    if [[ "$enable_auth" != "y" && "$enable_auth" != "Y" ]]; then
+    if [[ "$enable_auth" == "n" || "$enable_auth" == "N" ]]; then
         cat >> "$INSTALL_DIR/.env" << EOF
 
-# 访问鉴权（已禁用）
+# 访问鉴权（已禁用 - 公开访问）
 ENABLE_AUTH=false
 EOF
-        info "跳过鉴权配置（公开访问）"
+        warning "已禁用鉴权，文档站将公开访问"
         return
     fi
 

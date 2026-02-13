@@ -1,6 +1,6 @@
 # 📚 Docs Share
 
-零配置、零依赖的 Markdown 文档站。扔进 `.md` 文件，即刻可用。
+零配置、零依赖的 Markdown 私有文档站。扔进 `.md` 文件，即刻可用，默认鉴权保护。
 
 ## ✨ 特性
 
@@ -127,8 +127,8 @@ npm run dev  # 文件变更自动重启
 |---------|-------|------|
 | `PORT` | `3457` | 服务端口 |
 | `API_KEY` | 自动生成 | API 认证密钥（首次启动自动生成） |
-| `ENABLE_AUTH` | `false` | 是否启用前端访问鉴权（HTTP Basic Auth） |
-| `AUTH_USERS` | `admin:admin` | 授权用户列表（格式：`user1:pass1,user2:pass2`） |
+| `ENABLE_AUTH` | `true` | 是否启用前端访问鉴权（默认启用，保护私有文档） |
+| `AUTH_USERS` | `admin:admin` | 授权用户列表（格式：`user1:pass1,user2:pass2`）⚠️ 请修改默认密码 |
 | `ENABLE_WEBHOOK` | `false` | 是否启用 Git webhook |
 | `GIT_REPO_PATH` | 项目目录 | Git 仓库**绝对路径**（webhook 执行 `git pull` 的目录） |
 
@@ -156,19 +156,22 @@ GIT_REPO_PATH=/path/to/repo
 
 ## 🔒 访问鉴权
 
-### 启用鉴权保护
+### 默认启用，保护私有文档
 
-文档站默认公开访问，可启用 HTTP Basic Auth 保护私有文档：
+文档站**默认启用** HTTP Basic Auth 鉴权，保护私有文档：
 
 #### 方式一：安装时配置（推荐）
 
-运行 `./install.sh` 时会询问是否启用鉴权：
+运行 `./install.sh` 时会询问是否启用鉴权（默认启用）：
 
 ```
-是否需要启用访问鉴权？[y/N] y
+访问鉴权配置（保护私有文档）
+是否启用鉴权？[Y/n]     # 直接回车 = 启用（推荐）
 用户名 [默认: admin]: alice
 密码: ******
 ```
+
+**禁用鉴权（改为公开访问）**：输入 `n`
 
 #### 方式二：手动配置
 
@@ -193,6 +196,38 @@ pm2 restart docs-share
 
 # Docker 模式
 cd ~/docs-share-data && docker compose restart
+```
+
+### 禁用鉴权（改为公开访问）
+
+如需将文档站改为公开访问（如开源项目文档）：
+
+**PM2 模式：**
+
+```bash
+# 编辑配置
+nano ~/.docs-share/.env
+
+# 修改为
+ENABLE_AUTH=false
+
+# 重启服务
+pm2 restart docs-share
+```
+
+**Docker 模式：**
+
+```bash
+# 编辑配置
+nano ~/docs-share-data/docker-compose.yml
+
+# 修改环境变量
+environment:
+  - ENABLE_AUTH=false
+
+# 重启容器
+cd ~/docs-share-data
+docker compose restart
 ```
 
 ### 访问体验
