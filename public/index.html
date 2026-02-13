@@ -298,13 +298,18 @@
         }
         .doc-item.active .doc-item-title { color: var(--text-bright); }
 
-        .doc-item-desc {
-            font-size: 11px;
-            color: var(--text-muted);
-            margin-top: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        /* ── Drag and Drop ── */
+        .doc-item[draggable="true"] {
+            cursor: grab;
+        }
+        .doc-item.dragging {
+            opacity: 0.4;
+        }
+        .doc-item.drag-over-top {
+            box-shadow: 0 -2px 0 0 var(--accent);
+        }
+        .doc-item.drag-over-bottom {
+            box-shadow: 0 2px 0 0 var(--accent);
         }
 
         /* ── Content ── */
@@ -724,7 +729,6 @@
             } else {
                 filteredDocs = docConfig.filter(doc =>
                     doc.title.toLowerCase().includes(searchQuery) ||
-                    doc.desc.toLowerCase().includes(searchQuery) ||
                     doc.file.toLowerCase().includes(searchQuery)
                 );
             }
@@ -754,7 +758,7 @@
             try {
                 const res = await fetch('/api/docs?t=' + Date.now());
                 const list = await res.json();
-                docConfig = list.map(d => ({ file: d.file, title: d.title, desc: d.desc, path: './' }));
+                docConfig = list.map(d => ({ file: d.file, title: d.title, path: './' }));
                 filterDocs(searchQuery);
                 console.log('✓ Refreshed docs list');
             } catch (e) {
@@ -763,6 +767,8 @@
                 btn.classList.remove('loading');
             }
         }
+
+        let dragSrcEl = null;
 
         function updateDocList() {
             const docList = document.getElementById('docList');
@@ -777,20 +783,30 @@
                 return;
             }
 
+            const canDrag = !searchQuery; // 搜索时禁用拖拽
+
             filteredDocs.forEach((doc, i) => {
                 const li = document.createElement('li');
                 li.className = `doc-item${i === 0 && !currentDoc ? ' active' : ''}`;
+                li.dataset.file = doc.file;
+
+                if (canDrag) {
+                    li.draggable = true;
+                    li.addEventListener('dragstart', handleDragStart);
+                    li.addEventListener('dragover', handleDragOver);
+                    li.addEventListener('dragleave', handleDragLeave);
+                    li.addEventListener('drop', handleDrop);
+                    li.addEventListener('dragend', handleDragEnd);
+                }
 
                 // Highlight search query
                 let titleHtml = doc.title;
-                let descHtml = doc.desc;
                 if (searchQuery) {
-                    const regex = new RegExp(`(${searchQuery})`, 'gi');
+                    const regex = new RegExp(`(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
                     titleHtml = titleHtml.replace(regex, '<mark style="background: var(--accent-glow); color: var(--accent);">$1</mark>');
-                    descHtml = descHtml.replace(regex, '<mark style="background: var(--accent-glow); color: var(--accent);">$1</mark>');
                 }
 
-                li.innerHTML = `<div class="doc-item-title">${titleHtml}</div><div class="doc-item-desc">${descHtml}</div>`;
+                li.innerHTML = `<div class="doc-item-title">${titleHtml}</div>`;
                 li.onclick = () => {
                     document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('active'));
                     li.classList.add('active');
@@ -800,6 +816,95 @@
             });
 
             updateDocCount();
+        }
+
+        // ── Drag and Drop ──
+        function handleDragStart(e) {
+            dragSrcEl = this;
+            this.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', this.dataset.file);
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (this === dragSrcEl) return;
+
+            // 清除其他元素的指示线
+            document.querySelectorAll('.doc-item').forEach(el => {
+                el.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+
+            const rect = this.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+                this.classList.add('drag-over-top');
+            } else {
+                this.classList.add('drag-over-bottom');
+            }
+        }
+
+        function handleDragLeave() {
+            this.classList.remove('drag-over-top', 'drag-over-bottom');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            if (this === dragSrcEl) return;
+
+            const dragFile = e.dataTransfer.getData('text/plain');
+            const dropFile = this.dataset.file;
+
+            const dragIdx = docConfig.findIndex(d => d.file === dragFile);
+            const dropIdx = docConfig.findIndex(d => d.file === dropFile);
+            if (dragIdx === -1 || dropIdx === -1) return;
+
+            // 从原位置移除
+            const [moved] = docConfig.splice(dragIdx, 1);
+
+            // 判断插入位置
+            const rect = this.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            let newIdx = docConfig.findIndex(d => d.file === dropFile);
+            if (e.clientY >= midY) {
+                newIdx += 1;
+            }
+            docConfig.splice(newIdx, 0, moved);
+
+            // 更新 filteredDocs 并重新渲染
+            filteredDocs = [...docConfig];
+            updateDocList();
+
+            // 保持当前选中状态
+            if (currentDoc) {
+                document.querySelectorAll('.doc-item').forEach(el => {
+                    el.classList.toggle('active', el.dataset.file === currentDoc.file);
+                });
+            }
+
+            // 保存排序到服务端
+            saveDocOrder();
+        }
+
+        function handleDragEnd() {
+            this.classList.remove('dragging');
+            document.querySelectorAll('.doc-item').forEach(el => {
+                el.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+        }
+
+        async function saveDocOrder() {
+            const order = docConfig.map(d => d.file);
+            try {
+                await fetch('/api/docs/order', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order }),
+                });
+            } catch (e) {
+                console.error('Failed to save doc order:', e);
+            }
         }
 
         function initDocList() {
@@ -825,7 +930,7 @@
             try {
                 const res = await fetch('/api/docs');
                 const list = await res.json();
-                docConfig = list.map(d => ({ file: d.file, title: d.title, desc: d.desc, path: './' }));
+                docConfig = list.map(d => ({ file: d.file, title: d.title, path: './' }));
             } catch (e) { console.error('Failed to load doc list:', e); }
 
             initDocList();

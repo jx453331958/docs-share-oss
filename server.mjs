@@ -20,6 +20,7 @@ const PORT = process.env.PORT || 3457;
 const DOCS_DIR = join(__dirname, 'docs');
 const PUBLIC_DIR = join(__dirname, 'public');
 const USERS_FILE = join(__dirname, 'users.json');
+const DOC_ORDER_FILE = join(__dirname, 'doc-order.json');
 const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || __dirname;
@@ -278,7 +279,35 @@ async function handleApiDocs(req, res) {
   const files = await readdir(DOCS_DIR);
   const mdFiles = files.filter(f => f.endsWith('.md'));
   const docs = await Promise.all(mdFiles.map(f => extractMeta(join(DOCS_DIR, f), f)));
-  docs.sort((a, b) => b.mtime - a.mtime); // newest first
+
+  // 按自定义顺序排列，不在列表中的新文档按 mtime 降序追加到末尾
+  let order = null;
+  try {
+    const data = await readFile(DOC_ORDER_FILE, 'utf-8');
+    order = JSON.parse(data);
+  } catch {
+    // 文件不存在或解析失败，fallback 到 mtime 排序
+  }
+
+  if (Array.isArray(order) && order.length > 0) {
+    const orderMap = new Map(order.map((file, idx) => [file, idx]));
+    const ordered = [];
+    const unordered = [];
+    for (const doc of docs) {
+      if (orderMap.has(doc.file)) {
+        ordered.push(doc);
+      } else {
+        unordered.push(doc);
+      }
+    }
+    ordered.sort((a, b) => orderMap.get(a.file) - orderMap.get(b.file));
+    unordered.sort((a, b) => b.mtime - a.mtime);
+    docs.length = 0;
+    docs.push(...ordered, ...unordered);
+  } else {
+    docs.sort((a, b) => b.mtime - a.mtime); // newest first
+  }
+
   res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(docs));
 }
@@ -348,6 +377,29 @@ async function handleDeleteDoc(req, res, filename) {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, message: 'Document deleted' }));
+  } catch (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: error.message }));
+  }
+}
+
+// ── PUT /api/docs/order - 更新文档排序 ──
+async function handleUpdateDocOrder(req, res) {
+  const user = requireSession(req, res, { redirect: false });
+  if (!user) return;
+
+  try {
+    const body = await parseBody(req);
+    const { order } = body;
+
+    if (!Array.isArray(order) || !order.every(f => typeof f === 'string')) {
+      throw new Error('order must be an array of filenames');
+    }
+
+    await writeFile(DOC_ORDER_FILE, JSON.stringify(order, null, 2), 'utf-8');
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true }));
   } catch (error) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: error.message }));
@@ -652,6 +704,10 @@ const server = createServer(async (req, res) => {
     return handleUploadDoc(req, res);
   }
 
+  if (pathname === '/api/docs/order' && req.method === 'PUT') {
+    return handleUpdateDocOrder(req, res);
+  }
+
   if (pathname.startsWith('/api/docs/') && req.method === 'DELETE') {
     const filename = decodeURIComponent(pathname.replace('/api/docs/', ''));
     return handleDeleteDoc(req, res, filename);
@@ -744,6 +800,7 @@ ENABLE_WEBHOOK=false
   console.log(`  GET    /api/docs          - List all documents`);
   console.log(`  POST   /api/docs          - Upload document (requires auth)`);
   console.log(`  DELETE /api/docs/:file    - Delete document (requires auth)`);
+  console.log(`  PUT    /api/docs/order    - Update document order`);
   if (ENABLE_WEBHOOK) {
     console.log(`  POST   /api/webhook       - Git webhook handler`);
   }
