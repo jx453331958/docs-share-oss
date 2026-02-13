@@ -124,9 +124,9 @@ npm run dev  # 文件变更自动重启
 | 环境变量 | 默认值 | 说明 |
 |---------|-------|------|
 | `PORT` | `3457` | 服务端口 |
-| `API_KEY` | `dev-key-change-in-production` | API 认证密钥（上传/删除文档用） |
+| `API_KEY` | 自动生成 | API 认证密钥（首次启动自动生成） |
 | `ENABLE_WEBHOOK` | `false` | 是否启用 Git webhook |
-| `GIT_REPO_PATH` | 项目目录 | Git 仓库路径（webhook 用） |
+| `GIT_REPO_PATH` | 项目目录 | Git 仓库**绝对路径**（webhook 执行 `git pull` 的目录） |
 
 创建 `.env` 文件（参考 `.env.example`）：
 
@@ -188,7 +188,23 @@ export ENABLE_WEBHOOK=true
 ENABLE_WEBHOOK=true
 ```
 
-#### 2. 配置 Git 仓库 Webhook
+#### 2. 设置 GIT_REPO_PATH
+
+**关键概念：** 这是服务器上 Git 仓库的**本地路径**
+
+```bash
+# 例如：你在服务器上克隆了文档仓库
+cd /home/user
+git clone https://github.com/yourname/my-docs.git
+
+# 那么 GIT_REPO_PATH 就是
+GIT_REPO_PATH=/home/user/my-docs
+
+# Docker 容器需要用容器内路径
+GIT_REPO_PATH=/app/docs
+```
+
+#### 3. 配置 Git 仓库 Webhook
 
 **GitHub:**
 1. 进入仓库 Settings → Webhooks → Add webhook
@@ -201,17 +217,17 @@ ENABLE_WEBHOOK=true
 2. URL: `http://your-server:3457/api/webhook`
 3. Trigger: 勾选 "Push events"
 
-#### 3. 测试 Webhook
+#### 4. 测试 Webhook
 
 ```bash
 # 手动触发
 curl -X POST http://your-server:3457/api/webhook
 
-# 或使用脚本
-./webhook-setup.sh
+# 本地推送测试
+git push  # 服务器应该自动 git pull
 ```
 
-现在，每次推送到仓库时，服务器会自动执行 `git pull` 更新文档！
+**📖 完整配置指南：** 查看 [WEBHOOK-GUIDE.md](WEBHOOK-GUIDE.md) 了解详细示例和故障排查
 
 ## 🤖 AI 集成示例
 
