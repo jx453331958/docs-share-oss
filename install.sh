@@ -17,9 +17,18 @@ NC='\033[0m' # No Color
 # 版本信息
 VERSION="2.0.0"
 REPO="jx453331958/docs-share-oss"
-# 默认安装路径（可通过环境变量覆盖）
-INSTALL_DIR="${INSTALL_DIR:-./install}"
-DATA_DIR="${DATA_DIR:-./data}"
+# 安装路径配置文件
+CONFIG_FILE="$HOME/.docs-share.conf"
+
+# 优先级：环境变量 > 配置文件 > 默认值
+_SAVED_INSTALL_DIR=""
+_SAVED_DATA_DIR=""
+if [ -f "$CONFIG_FILE" ]; then
+    _SAVED_INSTALL_DIR=$(grep "^INSTALL_DIR=" "$CONFIG_FILE" 2>/dev/null | cut -d'"' -f2)
+    _SAVED_DATA_DIR=$(grep "^DATA_DIR=" "$CONFIG_FILE" 2>/dev/null | cut -d'"' -f2)
+fi
+INSTALL_DIR="${INSTALL_DIR:-${_SAVED_INSTALL_DIR:-./install}}"
+DATA_DIR="${DATA_DIR:-${_SAVED_DATA_DIR:-./data}}"
 
 # 打印带颜色的消息
 info() { echo -e "${BLUE}ℹ${NC} $1"; }
@@ -164,6 +173,13 @@ install() {
 
     success "安装目录: $INSTALL_DIR"
     success "数据目录: $DATA_DIR"
+
+    # 保存安装路径到配置文件，后续操作可自动找到
+    cat > "$CONFIG_FILE" << EOF
+# Docs Share 安装路径（自动生成，勿手动修改）
+INSTALL_DIR="$INSTALL_DIR"
+DATA_DIR="$DATA_DIR"
+EOF
     echo ""
 
     # 选择安装模式
@@ -1781,6 +1797,9 @@ uninstall() {
         pm2 delete docs-share
         pm2 save
     fi
+
+    # 删除安装路径配置文件
+    rm -f "$CONFIG_FILE"
 
     success "卸载完成！"
 }
