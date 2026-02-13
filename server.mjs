@@ -23,7 +23,7 @@ const USERS_FILE = join(__dirname, 'users.json');
 const API_KEY = process.env.API_KEY || generateApiKey();
 const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || __dirname;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || randomBytes(32).toString('hex');
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';
 
 // 访问鉴权配置
 const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
@@ -410,6 +410,12 @@ async function readRawBody(req) {
 
 // ── Verify webhook signature ──
 function verifyWebhookSignature(req, rawBody) {
+  // If no secret configured, skip verification (backward compatible)
+  if (!WEBHOOK_SECRET) {
+    console.warn('[Webhook] No WEBHOOK_SECRET configured, skipping signature verification');
+    return true;
+  }
+
   // 1. GitHub: X-Hub-Signature-256 (HMAC-SHA256)
   const githubSig = req.headers['x-hub-signature-256'];
   if (githubSig) {
@@ -435,8 +441,8 @@ function verifyWebhookSignature(req, rawBody) {
     return false;
   }
 
-  // 3. No signature header provided
-  console.warn('[Webhook] No signature header found (expected X-Hub-Signature-256 or X-Gitlab-Token)');
+  // 3. Secret configured but no signature header provided
+  console.warn('[Webhook] WEBHOOK_SECRET is set but no signature header found (expected X-Hub-Signature-256 or X-Gitlab-Token)');
   return false;
 }
 
@@ -821,7 +827,6 @@ server.listen(PORT, '0.0.0.0', async () => {
 PORT=${PORT}
 API_KEY=${API_KEY}
 ENABLE_WEBHOOK=false
-WEBHOOK_SECRET=${WEBHOOK_SECRET}
 `;
       await writeFile(envPath, envContent, { flag: 'wx' }); // wx = 只在文件不存在时写入
       console.log(`✓ Saved to: ${envPath}`);
@@ -834,7 +839,7 @@ WEBHOOK_SECRET=${WEBHOOK_SECRET}
     console.log(`🔑 API Key:   ✓ Loaded from environment`);
   }
 
-  console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}${ENABLE_WEBHOOK ? ` (Secret: ${process.env.WEBHOOK_SECRET ? '✓ From env' : '⚠ Auto-generated'})` : ''}`);
+  console.log(`🔗 Webhook:   ${ENABLE_WEBHOOK ? '✓ Enabled' : '✗ Disabled'}${ENABLE_WEBHOOK ? ` (Secret: ${WEBHOOK_SECRET ? '✓ Configured' : '⚠ Not set, verification disabled'})` : ''}`);
   console.log(`🔒 Auth:      ${ENABLE_AUTH ? `✓ Enabled (${AUTH_USERS.size} user${AUTH_USERS.size > 1 ? 's' : ''})` : '✗ Disabled (Public access)'}`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
   console.log(`API Endpoints:`);
