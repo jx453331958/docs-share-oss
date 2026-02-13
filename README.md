@@ -26,19 +26,51 @@
 
 ## 🚀 快速开始
 
-### 方式一：Docker（推荐）
+### 一键安装脚本（推荐）⭐
+
+全自动安装、配置、更新：
+
+```bash
+# 下载并运行安装脚本
+curl -fsSL https://raw.githubusercontent.com/jx453331958/docs-share-oss/main/install.sh | bash
+
+# 或克隆后运行
+git clone https://github.com/jx453331958/docs-share-oss.git
+cd docs-share-oss
+./install.sh
+```
+
+**支持功能：**
+- ✅ 首次安装（Node.js / Docker / PM2）
+- ✅ 自动更新到最新版
+- ✅ 启动/停止/重启服务
+- ✅ 状态检查和日志查看
+- ✅ 一键卸载
+
+**常用命令：**
+```bash
+./install.sh install  # 安装
+./install.sh update   # 更新
+./install.sh start    # 启动
+./install.sh status   # 状态
+./install.sh logs     # 日志
+```
+
+---
+
+### 方式一：Docker
 
 ```bash
 docker run -d \
   -p 3457:3457 \
   -v /path/to/your/docs:/app/docs \
-  ghcr.io/jx453331958/docs-share:latest
+  ghcr.io/jx453331958/docs-share-oss:latest
 ```
 
 或使用 docker-compose：
 
 ```bash
-git clone https://github.com/jx453331958/docs-share.git
+git clone https://github.com/jx453331958/docs-share-oss.git
 cd docs-share
 
 # 把你的 .md 文件放进 docs/ 目录
@@ -50,7 +82,7 @@ docker compose up -d
 ### 方式二：Node.js
 
 ```bash
-git clone https://github.com/jx453331958/docs-share.git
+git clone https://github.com/jx453331958/docs-share-oss.git
 cd docs-share
 
 # 把你的 .md 文件放进 docs/ 目录
@@ -322,7 +354,7 @@ docs-share/
 
 ```bash
 # 1. 部署到服务器
-docker run -d -p 3457:3457 -v ~/my-docs:/app/docs ghcr.io/jx453331958/docs-share:latest
+docker run -d -p 3457:3457 -v ~/my-docs:/app/docs ghcr.io/jx453331958/docs-share-oss:latest
 
 # 2. 本地配置 CLI
 cat > .docsrc.json << EOF
