@@ -160,7 +160,7 @@ async function handleApiXhsList(req, res) {
         const meta = parseXhsReadme(content, dir.name);
         if (meta) {
           const s = await stat(readmePath);
-          meta.updatedAt = formatDateTime(s.mtime);
+          meta.updatedAt = toISO(s.mtime);
           articles.push(meta);
         }
       } catch { /* skip */ }
@@ -188,7 +188,7 @@ async function handleApiXhsDetail(req, res, slug) {
     const meta = parseXhsReadme(content, dirName);
     if (!meta) { res.writeHead(404); res.end('Not Found'); return; }
     const rs = await stat(readmePath);
-    meta.updatedAt = formatDateTime(rs.mtime);
+    meta.updatedAt = toISO(rs.mtime);
 
     // Get image list with mtimes
     const imagesDir = join(GIT_REPO_PATH, 'images', dirName);
@@ -231,9 +231,8 @@ async function handleApiXhsDetail(req, res, slug) {
   }
 }
 
-function formatDateTime(d) {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+function toISO(d) {
+  return d.toISOString();
 }
 
 function parseXhsReadme(content, dirName) {
