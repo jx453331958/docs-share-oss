@@ -140,6 +140,88 @@ function requireSession(req, res, options = {}) {
   return null;
 }
 
+// ── XHS API ──
+async function handleApiXhsList(req, res) {
+  const user = requireSession(req, res, { redirect: false });
+  if (!user) return;
+
+  try {
+    const entries = await readdir(GIT_REPO_PATH, { withFileTypes: true });
+    const xhsDirs = entries.filter(e => e.isDirectory() && e.name.startsWith('xhs-'));
+    const articles = [];
+
+    for (const dir of xhsDirs) {
+      const readmePath = join(GIT_REPO_PATH, dir.name, 'README.md');
+      try {
+        const content = await readFile(readmePath, 'utf-8');
+        const meta = parseXhsReadme(content, dir.name);
+        if (meta) articles.push(meta);
+      } catch { /* skip */ }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(articles));
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: e.message }));
+  }
+}
+
+async function handleApiXhsDetail(req, res, slug) {
+  const user = requireSession(req, res, { redirect: false });
+  if (!user) return;
+
+  try {
+    const dirName = slug.startsWith('xhs-') ? slug : `xhs-${slug}`;
+    const readmePath = join(GIT_REPO_PATH, dirName, 'README.md');
+    const content = await readFile(readmePath, 'utf-8');
+    const meta = parseXhsReadme(content, dirName);
+    if (!meta) { res.writeHead(404); res.end('Not Found'); return; }
+
+    // Get image list
+    const imagesDir = join(GIT_REPO_PATH, 'images', dirName);
+    let images = [];
+    try {
+      const files = await readdir(imagesDir);
+      images = files.filter(f => /\.(png|jpg|jpeg|webp|gif)$/i.test(f)).sort((a, b) => {
+        const na = parseInt(a.match(/(\d+)/)?.[1] || '0');
+        const nb = parseInt(b.match(/(\d+)/)?.[1] || '0');
+        return na - nb;
+      });
+    } catch { /* no images */ }
+
+    // Get latest publish draft
+    let publishContent = '';
+    try {
+      const allFiles = await readdir(GIT_REPO_PATH);
+      const drafts = allFiles.filter(f => f.startsWith(dirName + '-') && f.endsWith('.md')).sort();
+      if (drafts.length > 0) {
+        publishContent = await readFile(join(GIT_REPO_PATH, drafts[drafts.length - 1]), 'utf-8');
+      }
+    } catch { /* no draft */ }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ...meta, images, publishContent }));
+  } catch (e) {
+    if (e.code === 'ENOENT') { res.writeHead(404); res.end('Not Found'); }
+    else { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
+  }
+}
+
+function parseXhsReadme(content, dirName) {
+  const get = (key) => {
+    const m = content.match(new RegExp(`\\*\\*${key}\\*\\*:\\s*(.+)`, 'i'));
+    return m ? m[1].trim() : '';
+  };
+  const slug = get('slug') || dirName.replace(/^xhs-/, '');
+  const title = get('标题') || slug;
+  const date = get('创建日期') || '';
+  const status = get('状态') || '📝 草稿';
+  const style = get('风格') || 'light';
+  const slides = parseInt(get('Slides') || '0');
+  return { slug, dirName, title, date, status, style, slides };
+}
+
 // ── Parse JSON body ──
 async function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -540,6 +622,51 @@ const server = createServer(async (req, res) => {
   if (pathname === '/health' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', timestamp: Date.now() }));
+    return;
+  }
+
+  // XHS API Routes
+  if (pathname === '/api/xhs' && req.method === 'GET') {
+    return handleApiXhsList(req, res);
+  }
+  if (pathname.startsWith('/api/xhs/') && req.method === 'GET') {
+    const slug = decodeURIComponent(pathname.replace('/api/xhs/', ''));
+    return handleApiXhsDetail(req, res, slug);
+  }
+
+  // XHS images (from GIT_REPO_PATH/images/)
+  if (pathname.startsWith('/images/xhs-')) {
+    const user = requireSession(req, res);
+    if (!user) return;
+    const filePath = join(GIT_REPO_PATH, decodeURIComponent(pathname.slice(1)));
+    if (!filePath.startsWith(join(GIT_REPO_PATH, 'images'))) {
+      res.writeHead(403); res.end('Forbidden'); return;
+    }
+    try {
+      const data = await readFile(filePath);
+      const ext = extname(filePath);
+      res.writeHead(200, {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=3600',
+      });
+      res.end(data);
+    } catch {
+      res.writeHead(404); res.end('Not Found');
+    }
+    return;
+  }
+
+  // XHS page (SPA)
+  if (pathname === '/xhs' || pathname.startsWith('/xhs/')) {
+    const user = requireSession(req, res);
+    if (!user) return;
+    try {
+      const data = await readFile(join(PUBLIC_DIR, 'xhs.html'));
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    } catch {
+      res.writeHead(404); res.end('Not Found');
+    }
     return;
   }
 

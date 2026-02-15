@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书工作台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #080b10;
+            --bg-surface: #0e1218;
+            --bg-elevated: #151b24;
+            --bg-hover: #1c2430;
+            --border: rgba(99, 140, 255, 0.08);
+            --border-active: rgba(99, 140, 255, 0.25);
+            --accent: #638cff;
+            --accent-glow: rgba(99, 140, 255, 0.15);
+            --accent-dim: #3d5a9e;
+            --text: #c8cfd8;
+            --text-bright: #e8ecf0;
+            --text-muted: #6b7a8d;
+            --green: #34d399;
+            --green-dim: #064e36;
+            --orange: #f59e0b;
+            --orange-dim: #78350f;
+            --red: #f47067;
+            --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(99,140,255,0.15); border-radius: 3px; }
+
+        /* Header */
+        .header {
+            padding: 24px 32px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header h1 { font-size: 18px; font-weight: 700; color: var(--text-bright); }
+        .header h1 span { color: var(--accent); }
+        .header .home-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .header .home-link:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* Main */
+        .main { max-width: 1200px; margin: 0 auto; padding: 32px; }
+
+        /* Status Group */
+        .status-group { margin-bottom: 40px; }
+        .status-group.hidden { display: none; }
+        .status-title {
+            font-size: 16px; font-weight: 600; color: var(--text-bright);
+            margin-bottom: 16px; padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* Card Grid */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+        }
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .card:hover { border-color: var(--border-active); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .card-thumb {
+            width: 100%;
+            aspect-ratio: 3/4;
+            object-fit: cover;
+            background: var(--bg-elevated);
+            display: block;
+        }
+        .card-body { padding: 12px 14px; }
+        .card-title { font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .card-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; }
+
+        /* Detail View */
+        .detail { display: none; }
+        .detail.active { display: block; }
+        .list-view.hidden { display: none; }
+
+        .back-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px; background: var(--bg-elevated);
+            border: 1px solid var(--border); border-radius: 8px;
+            color: var(--text); font-size: 13px; cursor: pointer;
+            transition: all 0.2s; margin-bottom: 24px;
+        }
+        .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+        .detail-header { margin-bottom: 24px; }
+        .detail-title { font-size: 24px; font-weight: 900; color: var(--text-bright); margin-bottom: 8px; }
+        .detail-tags { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .tag {
+            padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+        }
+        .tag-status-draft { background: var(--accent-glow); color: var(--accent); }
+        .tag-status-ready { background: rgba(245,158,11,0.15); color: var(--orange); }
+        .tag-status-published { background: rgba(52,211,153,0.15); color: var(--green); }
+        .tag-style { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
+        .tag-date { color: var(--text-muted); font-size: 13px; }
+
+        /* Slides */
+        .slides-container {
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            margin-bottom: 32px;
+        }
+        .slide-img {
+            width: 390px; max-width: 100%; border-radius: 4px; cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .slide-img:hover { opacity: 0.9; }
+
+        /* Publish Content */
+        .publish-section {
+            max-width: 700px; margin: 0 auto;
+            background: var(--bg-surface); border: 1px solid var(--border);
+            border-radius: 10px; padding: 24px; position: relative;
+        }
+        .publish-section h3 { font-size: 15px; color: var(--text-bright); margin-bottom: 12px; }
+        .copy-btn {
+            position: absolute; top: 16px; right: 16px;
+            padding: 6px 14px; background: var(--bg-elevated);
+            border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text-muted); font-size: 12px; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .copy-btn.copied { border-color: var(--green); color: var(--green); }
+        .publish-text {
+            white-space: pre-wrap; font-size: 14px; line-height: 1.8;
+            color: var(--text);
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none; position: fixed; inset: 0; z-index: 1000;
+            background: rgba(0,0,0,0.9); justify-content: center; align-items: center;
+            cursor: zoom-out;
+        }
+        .lightbox.active { display: flex; }
+        .lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
+
+        /* Loading */
+        .loading { text-align: center; padding: 80px; color: var(--text-muted); }
+        .loading::before {
+            content: ''; display: block; width: 32px; height: 32px;
+            border: 2px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; margin: 0 auto 16px;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 768px) {
+            .header { padding: 16px; }
+            .main { padding: 16px; }
+            .slide-img { width: 100%; }
+            .card-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><span>📕</span> 小红书工作台</h1>
+        <a href="/" class="home-link">← 文档中心</a>
+    </div>
+
+    <div class="main">
+        <div class="list-view" id="listView">
+            <div class="loading" id="listLoading">加载中</div>
+        </div>
+        <div class="detail" id="detailView">
+            <button class="back-btn" onclick="showList()">← 返回列表</button>
+            <div id="detailContent"></div>
+        </div>
+    </div>
+
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+        <img id="lightboxImg" src="" alt="">
+    </div>
+
+    <script>
+        let articles = [];
+
+        function statusKey(status) {
+            if (status.includes('草稿')) return 'draft';
+            if (status.includes('待发布')) return 'ready';
+            if (status.includes('已发布')) return 'published';
+            return 'draft';
+        }
+
+        function statusTagClass(key) {
+            return { draft: 'tag-status-draft', ready: 'tag-status-ready', published: 'tag-status-published' }[key] || 'tag-status-draft';
+        }
+
+        function statusOrder() { return ['draft', 'ready', 'published']; }
+        function statusLabel(key) {
+            return { draft: '📝 草稿', ready: '📤 待发布', published: '✅ 已发布' }[key] || key;
+        }
+
+        async function init() {
+            try {
+                const res = await fetch('/api/xhs');
+                articles = await res.json();
+                renderList();
+            } catch (e) {
+                document.getElementById('listLoading').textContent = '加载失败: ' + e.message;
+            }
+        }
+
+        function renderList() {
+            const container = document.getElementById('listView');
+            const groups = {};
+            for (const key of statusOrder()) groups[key] = [];
+            for (const a of articles) {
+                const key = statusKey(a.status);
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(a);
+            }
+            // Sort each group by date desc
+            for (const key of Object.keys(groups)) {
+                groups[key].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            }
+
+            let html = '';
+            for (const key of statusOrder()) {
+                const items = groups[key];
+                if (!items || items.length === 0) continue;
+                html += `<div class="status-group"><div class="status-title">${statusLabel(key)} (${items.length})</div><div class="card-grid">`;
+                for (const a of items) {
+                    const thumbUrl = `/images/${a.dirName}/slide1.png`;
+                    html += `<div class="card" onclick="showDetail('${a.slug}')">
+                        <img class="card-thumb" src="${thumbUrl}" alt="${a.title}" loading="lazy" onerror="this.style.display='none'">
+                        <div class="card-body">
+                            <div class="card-title">${a.title}</div>
+                            <div class="card-meta"><span>${a.date}</span><span>${a.slides} slides</span></div>
+                        </div>
+                    </div>`;
+                }
+                html += '</div></div>';
+            }
+            if (!html) html = '<div style="text-align:center;color:var(--text-muted);padding:60px;">暂无小红书文章</div>';
+            container.innerHTML = html;
+        }
+
+        async function showDetail(slug) {
+            document.getElementById('listView').classList.add('hidden');
+            const detail = document.getElementById('detailView');
+            detail.classList.add('active');
+            document.getElementById('detailContent').innerHTML = '<div class="loading">加载中</div>';
+            window.scrollTo(0, 0);
+
+            try {
+                const res = await fetch(`/api/xhs/${slug}`);
+                const data = await res.json();
+                renderDetail(data);
+            } catch (e) {
+                document.getElementById('detailContent').innerHTML = `<p style="color:var(--red)">加载失败: ${e.message}</p>`;
+            }
+        }
+
+        function renderDetail(data) {
+            const sk = statusKey(data.status);
+            let html = `<div class="detail-header">
+                <div class="detail-title">${data.title}</div>
+                <div class="detail-tags">
+                    <span class="tag ${statusTagClass(sk)}">${data.status}</span>
+                    <span class="tag tag-style">${data.style}</span>
+                    <span class="tag-date">${data.date}</span>
+                </div>
+            </div>`;
+
+            // Slides
+            if (data.images && data.images.length > 0) {
+                html += '<div class="slides-container">';
+                for (const img of data.images) {
+                    const url = `/images/${data.dirName}/${img}`;
+                    html += `<img class="slide-img" src="${url}" alt="${img}" loading="lazy" onclick="openLightbox('${url}')">`;
+                }
+                html += '</div>';
+            }
+
+            // Publish content
+            if (data.publishContent) {
+                // Split into main text and sources
+                const content = data.publishContent;
+                // Extract plain text (strip markdown image refs)
+                const plainText = content.replace(/!\[.*?\]\(.*?\)/g, '').replace(/^#.*$/gm, '').trim();
+
+                // Check for sources section
+                const sourcesMatch = content.match(/(?:##?\s*(?:信息来源|参考|Sources?|References?)\s*\n)([\s\S]*?)$/i);
+                const mainText = sourcesMatch ? content.slice(0, sourcesMatch.index) : content;
+                const sourcesText = sourcesMatch ? sourcesMatch[1].trim() : '';
+
+                const displayText = mainText.replace(/!\[.*?\]\(.*?\)/g, '').replace(/^#+\s+.*$/gm, '').trim();
+
+                html += `<div class="publish-section">
+                    <h3>配文</h3>
+                    <button class="copy-btn" onclick="copyText(this)">复制配文</button>
+                    <div class="publish-text" id="publishText">${escapeHtml(displayText)}</div>
+                </div>`;
+
+                if (sourcesText) {
+                    html += `<div class="publish-section" style="margin-top:16px;">
+                        <h3>信息来源</h3>
+                        <div class="publish-text">${escapeHtml(sourcesText)}</div>
+                    </div>`;
+                }
+            }
+
+            document.getElementById('detailContent').innerHTML = html;
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function showList() {
+            document.getElementById('detailView').classList.remove('active');
+            document.getElementById('listView').classList.remove('hidden');
+        }
+
+        function copyText(btn) {
+            const text = document.getElementById('publishText')?.textContent || '';
+            navigator.clipboard.writeText(text).then(() => {
+                btn.textContent = '已复制 ✓';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = '复制配文'; btn.classList.remove('copied'); }, 2000);
+            });
+        }
+
+        function openLightbox(url) {
+            document.getElementById('lightboxImg').src = url;
+            document.getElementById('lightbox').classList.add('active');
+        }
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('active');
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+        init();
+    </script>
+</body>
+</html>
