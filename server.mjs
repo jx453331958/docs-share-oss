@@ -159,7 +159,7 @@ async function handleApiXhsList(req, res) {
         const content = await readFile(readmePath, 'utf-8');
         const meta = parseXhsReadme(content, dir.name);
         if (meta) {
-          meta.updatedAt = toISO(await latestCommitTime(join(GIT_REPO_PATH, dir.name)));
+          meta.updatedAt = toISO(await latestCommitTime(dir.name));
           articles.push(meta);
         }
       } catch { /* skip */ }
@@ -186,7 +186,7 @@ async function handleApiXhsDetail(req, res, slug) {
     const content = await readFile(readmePath, 'utf-8');
     const meta = parseXhsReadme(content, dirName);
     if (!meta) { res.writeHead(404); res.end('Not Found'); return; }
-    meta.updatedAt = toISO(await latestCommitTime(join(GIT_REPO_PATH, dirName)));
+    meta.updatedAt = toISO(await latestCommitTime(dirName));
 
     // Get image list with mtimes
     const imagesDir = join(GIT_REPO_PATH, 'images', dirName);
@@ -233,22 +233,23 @@ function toISO(d) {
   return d.toISOString();
 }
 
-async function latestCommitTime(dirPath) {
+async function latestCommitTime(slug) {
+  const dirName = slug.startsWith('xhs-') ? slug : `xhs-${slug}`;
+  // All resource paths this article depends on
+  const paths = [
+    dirName,                    // xhs-{slug}/ (HTML + CSS + README)
+    `images/${dirName}`,        // images/xhs-{slug}/ (PNG)
+    `${dirName}-*.md`,          // xhs-{slug}-*.md (publish doc)
+  ];
   try {
     const { execSync } = await import('child_process');
-    const ts = execSync(`git log -1 --format=%aI -- "${dirPath}"`, { cwd: GIT_REPO_PATH, encoding: 'utf-8' }).trim();
+    const ts = execSync(
+      `git log -1 --format=%aI -- ${paths.map(p => `"${p}"`).join(' ')}`,
+      { cwd: GIT_REPO_PATH, encoding: 'utf-8' }
+    ).trim();
     if (ts) return new Date(ts);
   } catch { /* fallback */ }
-  // fallback to mtime
-  let latest = new Date(0);
-  try {
-    const files = await readdir(dirPath);
-    for (const f of files) {
-      const s = await stat(join(dirPath, f));
-      if (s.mtime > latest) latest = s.mtime;
-    }
-  } catch {}
-  return latest;
+  return new Date(0);
 }
 
 function parseXhsReadme(content, dirName) {
