@@ -158,7 +158,11 @@ async function handleApiXhsList(req, res) {
       try {
         const content = await readFile(readmePath, 'utf-8');
         const meta = parseXhsReadme(content, dir.name);
-        if (meta) articles.push(meta);
+        if (meta) {
+          const s = await stat(readmePath);
+          meta.updatedAt = formatDateTime(s.mtime);
+          articles.push(meta);
+        }
       } catch { /* skip */ }
     }
 
@@ -183,6 +187,8 @@ async function handleApiXhsDetail(req, res, slug) {
     const content = await readFile(readmePath, 'utf-8');
     const meta = parseXhsReadme(content, dirName);
     if (!meta) { res.writeHead(404); res.end('Not Found'); return; }
+    const rs = await stat(readmePath);
+    meta.updatedAt = formatDateTime(rs.mtime);
 
     // Get image list with mtimes
     const imagesDir = join(GIT_REPO_PATH, 'images', dirName);
@@ -223,6 +229,11 @@ async function handleApiXhsDetail(req, res, slug) {
     if (e.code === 'ENOENT') { res.writeHead(404); res.end('Not Found'); }
     else { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); }
   }
+}
+
+function formatDateTime(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function parseXhsReadme(content, dirName) {
