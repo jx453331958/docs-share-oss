@@ -24,6 +24,9 @@ const ENABLE_WEBHOOK = process.env.ENABLE_WEBHOOK === 'true';
 const GIT_REPO_PATH = process.env.GIT_REPO_PATH || __dirname;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';
 
+// Git version tracker (updated on webhook pull)
+let gitVersion = Date.now();
+
 // 访问鉴权配置
 const ENABLE_AUTH = process.env.ENABLE_AUTH === 'true';
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 天
@@ -159,7 +162,10 @@ async function handleApiXhsList(req, res) {
       } catch { /* skip */ }
     }
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
     res.end(JSON.stringify(articles));
   } catch (e) {
     res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -178,16 +184,24 @@ async function handleApiXhsDetail(req, res, slug) {
     const meta = parseXhsReadme(content, dirName);
     if (!meta) { res.writeHead(404); res.end('Not Found'); return; }
 
-    // Get image list
+    // Get image list with mtimes
     const imagesDir = join(GIT_REPO_PATH, 'images', dirName);
     let images = [];
     try {
       const files = await readdir(imagesDir);
-      images = files.filter(f => /\.(png|jpg|jpeg|webp|gif)$/i.test(f)).sort((a, b) => {
+      const imageFiles = files.filter(f => /\.(png|jpg|jpeg|webp|gif)$/i.test(f)).sort((a, b) => {
         const na = parseInt(a.match(/(\d+)/)?.[1] || '0');
         const nb = parseInt(b.match(/(\d+)/)?.[1] || '0');
         return na - nb;
       });
+      for (const f of imageFiles) {
+        try {
+          const s = await stat(join(imagesDir, f));
+          images.push({ name: f, mtime: Math.floor(s.mtimeMs) });
+        } catch {
+          images.push({ name: f, mtime: 0 });
+        }
+      }
     } catch { /* no images */ }
 
     // Get latest publish draft
@@ -200,7 +214,10 @@ async function handleApiXhsDetail(req, res, slug) {
       }
     } catch { /* no draft */ }
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
     res.end(JSON.stringify({ ...meta, images, publishContent }));
   } catch (e) {
     if (e.code === 'ENOENT') { res.writeHead(404); res.end('Not Found'); }
@@ -489,6 +506,9 @@ async function handleWebhook(req, res) {
     console.log('[Webhook] Git pull output:', stdout);
     if (stderr) console.error('[Webhook] Git pull stderr:', stderr);
 
+    // Bump version so frontends know to refresh
+    gitVersion = Date.now();
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, message: 'Updated from git', output: stdout }));
   } catch (error) {
@@ -620,7 +640,7 @@ const server = createServer(async (req, res) => {
 
   // Health check endpoint (no auth required)
   if (pathname === '/health' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
     res.end(JSON.stringify({ status: 'ok', timestamp: Date.now() }));
     return;
   }
@@ -628,6 +648,15 @@ const server = createServer(async (req, res) => {
   // XHS API Routes
   if (pathname === '/api/xhs' && req.method === 'GET') {
     return handleApiXhsList(req, res);
+  }
+  // Version endpoint (no auth, for polling)
+  if (pathname === '/api/xhs/version' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    });
+    res.end(JSON.stringify({ version: gitVersion }));
+    return;
   }
   if (pathname.startsWith('/api/xhs/') && req.method === 'GET') {
     const slug = decodeURIComponent(pathname.replace('/api/xhs/', ''));
@@ -643,11 +672,17 @@ const server = createServer(async (req, res) => {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     try {
+      const s = await stat(filePath);
+      const etag = `"${Math.floor(s.mtimeMs).toString(36)}-${s.size.toString(36)}"`;
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304); res.end(); return;
+      }
       const data = await readFile(filePath);
       const ext = extname(filePath);
       res.writeHead(200, {
         'Content-Type': MIME[ext] || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'ETag': etag,
       });
       res.end(data);
     } catch {

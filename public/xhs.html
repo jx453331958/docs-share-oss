@@ -206,6 +206,9 @@
 
     <script>
         let articles = [];
+        let currentSlug = null;
+        let knownVersion = null;
+        let versionPollTimer = null;
 
         function statusKey(status) {
             if (status.includes('草稿')) return 'draft';
@@ -223,14 +226,46 @@
             return { draft: '📝 草稿', ready: '📤 待发布', published: '✅ 已发布' }[key] || key;
         }
 
+        async function loadList() {
+            const res = await fetch('/api/xhs');
+            articles = await res.json();
+            renderList();
+        }
+
         async function init() {
             try {
-                const res = await fetch('/api/xhs');
-                articles = await res.json();
-                renderList();
+                // Get initial version
+                try {
+                    const vRes = await fetch('/api/xhs/version');
+                    const vData = await vRes.json();
+                    knownVersion = vData.version;
+                } catch {}
+                await loadList();
+                startVersionPoll();
             } catch (e) {
                 document.getElementById('listLoading').textContent = '加载失败: ' + e.message;
             }
+        }
+
+        function startVersionPoll() {
+            if (versionPollTimer) clearInterval(versionPollTimer);
+            versionPollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/xhs/version');
+                    const data = await res.json();
+                    if (knownVersion !== null && data.version !== knownVersion) {
+                        knownVersion = data.version;
+                        await loadList();
+                        if (currentSlug) {
+                            // Refresh detail view too
+                            const detRes = await fetch(`/api/xhs/${currentSlug}`);
+                            const detData = await detRes.json();
+                            renderDetail(detData);
+                        }
+                    }
+                    knownVersion = data.version;
+                } catch {}
+            }, 30000);
         }
 
         function renderList() {
@@ -253,7 +288,7 @@
                 if (!items || items.length === 0) continue;
                 html += `<div class="status-group"><div class="status-title">${statusLabel(key)} (${items.length})</div><div class="card-grid">`;
                 for (const a of items) {
-                    const thumbUrl = `/images/${a.dirName}/slide1.png`;
+                    const thumbUrl = `/images/${a.dirName}/slide1.png?v=${knownVersion || Date.now()}`;
                     html += `<div class="card" onclick="showDetail('${a.slug}')">
                         <img class="card-thumb" src="${thumbUrl}" alt="${a.title}" loading="lazy" onerror="this.style.display='none'">
                         <div class="card-body">
@@ -269,6 +304,7 @@
         }
 
         async function showDetail(slug) {
+            currentSlug = slug;
             document.getElementById('listView').classList.add('hidden');
             const detail = document.getElementById('detailView');
             detail.classList.add('active');
@@ -299,8 +335,11 @@
             if (data.images && data.images.length > 0) {
                 html += '<div class="slides-container">';
                 for (const img of data.images) {
-                    const url = `/images/${data.dirName}/${img}`;
-                    html += `<img class="slide-img" src="${url}" alt="${img}" loading="lazy" onclick="openLightbox('${url}')">`;
+                    // Support both old format (string) and new format ({name, mtime})
+                    const imgName = typeof img === 'string' ? img : img.name;
+                    const imgMtime = typeof img === 'object' && img.mtime ? img.mtime : Date.now();
+                    const url = `/images/${data.dirName}/${imgName}?v=${imgMtime}`;
+                    html += `<img class="slide-img" src="${url}" alt="${imgName}" loading="lazy" onclick="openLightbox('${url}')">`;
                 }
                 html += '</div>';
             }
@@ -341,6 +380,7 @@
         }
 
         function showList() {
+            currentSlug = null;
             document.getElementById('detailView').classList.remove('active');
             document.getElementById('listView').classList.remove('hidden');
         }
