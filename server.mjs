@@ -159,7 +159,7 @@ async function handleApiXhsList(req, res) {
         const content = await readFile(readmePath, 'utf-8');
         const meta = parseXhsReadme(content, dir.name);
         if (meta) {
-          meta.updatedAt = toISO(await latestMtime(join(GIT_REPO_PATH, dir.name)));
+          meta.updatedAt = toISO(await latestCommitTime(join(GIT_REPO_PATH, dir.name)));
           articles.push(meta);
         }
       } catch { /* skip */ }
@@ -186,7 +186,7 @@ async function handleApiXhsDetail(req, res, slug) {
     const content = await readFile(readmePath, 'utf-8');
     const meta = parseXhsReadme(content, dirName);
     if (!meta) { res.writeHead(404); res.end('Not Found'); return; }
-    meta.updatedAt = toISO(await latestMtime(join(GIT_REPO_PATH, dirName)));
+    meta.updatedAt = toISO(await latestCommitTime(join(GIT_REPO_PATH, dirName)));
 
     // Get image list with mtimes
     const imagesDir = join(GIT_REPO_PATH, 'images', dirName);
@@ -233,7 +233,13 @@ function toISO(d) {
   return d.toISOString();
 }
 
-async function latestMtime(dirPath) {
+async function latestCommitTime(dirPath) {
+  try {
+    const { execSync } = await import('child_process');
+    const ts = execSync(`git log -1 --format=%aI -- "${dirPath}"`, { cwd: GIT_REPO_PATH, encoding: 'utf-8' }).trim();
+    if (ts) return new Date(ts);
+  } catch { /* fallback */ }
+  // fallback to mtime
   let latest = new Date(0);
   try {
     const files = await readdir(dirPath);
@@ -241,7 +247,7 @@ async function latestMtime(dirPath) {
       const s = await stat(join(dirPath, f));
       if (s.mtime > latest) latest = s.mtime;
     }
-  } catch { /* fallback to epoch */ }
+  } catch {}
   return latest;
 }
 
