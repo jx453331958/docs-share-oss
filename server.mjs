@@ -159,8 +159,7 @@ async function handleApiXhsList(req, res) {
         const content = await readFile(readmePath, 'utf-8');
         const meta = parseXhsReadme(content, dir.name);
         if (meta) {
-          const s = await stat(readmePath);
-          meta.updatedAt = toISO(s.mtime);
+          meta.updatedAt = toISO(await latestMtime(join(GIT_REPO_PATH, dir.name)));
           articles.push(meta);
         }
       } catch { /* skip */ }
@@ -187,8 +186,7 @@ async function handleApiXhsDetail(req, res, slug) {
     const content = await readFile(readmePath, 'utf-8');
     const meta = parseXhsReadme(content, dirName);
     if (!meta) { res.writeHead(404); res.end('Not Found'); return; }
-    const rs = await stat(readmePath);
-    meta.updatedAt = toISO(rs.mtime);
+    meta.updatedAt = toISO(await latestMtime(join(GIT_REPO_PATH, dirName)));
 
     // Get image list with mtimes
     const imagesDir = join(GIT_REPO_PATH, 'images', dirName);
@@ -233,6 +231,18 @@ async function handleApiXhsDetail(req, res, slug) {
 
 function toISO(d) {
   return d.toISOString();
+}
+
+async function latestMtime(dirPath) {
+  let latest = new Date(0);
+  try {
+    const files = await readdir(dirPath);
+    for (const f of files) {
+      const s = await stat(join(dirPath, f));
+      if (s.mtime > latest) latest = s.mtime;
+    }
+  } catch { /* fallback to epoch */ }
+  return latest;
 }
 
 function parseXhsReadme(content, dirName) {
