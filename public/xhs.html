@@ -331,13 +331,14 @@
             container.innerHTML = html;
         }
 
-        async function showDetail(slug) {
+        async function showDetail(slug, skipPush) {
             currentSlug = slug;
             document.getElementById('listView').classList.add('hidden');
             const detail = document.getElementById('detailView');
             detail.classList.add('active');
             document.getElementById('detailContent').innerHTML = '<div class="loading">加载中</div>';
             window.scrollTo(0, 0);
+            if (!skipPush) history.pushState({ slug }, '', `?slug=${slug}`);
 
             try {
                 const res = await fetch(`/api/xhs/${slug}`);
@@ -411,10 +412,11 @@
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
-        function showList() {
+        function showList(skipPush) {
             currentSlug = null;
             document.getElementById('detailView').classList.remove('active');
             document.getElementById('listView').classList.remove('hidden');
+            if (!skipPush) history.pushState({}, '', location.pathname);
         }
 
         function copyId(el, text) {
@@ -444,7 +446,19 @@
         }
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 
-        init();
+        window.addEventListener('popstate', (e) => {
+            if (e.state && e.state.slug) {
+                showDetail(e.state.slug, true);
+            } else {
+                showList(true);
+            }
+        });
+
+        init().then(() => {
+            const params = new URLSearchParams(location.search);
+            const slug = params.get('slug');
+            if (slug) showDetail(slug, true);
+        });
     </script>
 </body>
 </html>
