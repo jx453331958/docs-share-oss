@@ -124,6 +124,25 @@
         .tag-status-published { background: rgba(52,211,153,0.15); color: var(--green); }
         .tag-style { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
         .tag-date { color: var(--text-muted); font-size: 13px; }
+        .slug-id {
+            font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px;
+            color: var(--text-muted); background: var(--bg-elevated);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 2px 8px; cursor: pointer; user-select: all;
+            transition: all 0.2s; display: inline-block;
+        }
+        .slug-id:hover { border-color: var(--accent); color: var(--accent); }
+        .slug-id.copied { border-color: var(--green); color: var(--green); }
+        .slide-id {
+            font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px;
+            color: var(--text-muted); background: var(--bg-elevated);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 2px 6px; cursor: pointer; text-align: center;
+            transition: all 0.2s; margin-top: 4px; display: inline-block;
+        }
+        .slide-id:hover { border-color: var(--accent); color: var(--accent); }
+        .slide-id.copied { border-color: var(--green); color: var(--green); }
+        .slide-wrap { display: flex; flex-direction: column; align-items: center; }
 
         /* Slides */
         .slides-container {
@@ -301,6 +320,7 @@
                         <img class="card-thumb" src="${thumbUrl}" alt="${a.title}" loading="lazy" onerror="this.style.display='none'">
                         <div class="card-body">
                             <div class="card-title">${a.title}</div>
+                            <div style="margin-bottom:4px"><span class="slug-id" onclick="event.stopPropagation();copyId(this,'${a.slug}')">${a.slug}</span></div>
                             <div class="card-meta"><span>${fmtTime(a.updatedAt) || a.date}</span><span>${a.slides} slides</span></div>
                         </div>
                     </div>`;
@@ -333,6 +353,7 @@
             let html = `<div class="detail-header">
                 <div class="detail-title">${data.title}</div>
                 <div class="detail-tags">
+                    <span class="slug-id" onclick="copyId(this,'${data.slug}')">${data.slug}</span>
                     <span class="tag ${statusTagClass(sk)}">${data.status}</span>
                     <span class="tag tag-style">${data.style}</span>
                     <span class="tag-date">${fmtTime(data.updatedAt) || data.date}</span>
@@ -343,11 +364,14 @@
             if (data.images && data.images.length > 0) {
                 html += '<div class="slides-container">';
                 for (const img of data.images) {
-                    // Support both old format (string) and new format ({name, mtime})
                     const imgName = typeof img === 'string' ? img : img.name;
                     const imgMtime = typeof img === 'object' && img.mtime ? img.mtime : Date.now();
                     const url = `/images/${data.dirName}/${imgName}?v=${imgMtime}`;
-                    html += `<img class="slide-img" src="${url}" alt="${imgName}" loading="lazy" onclick="openLightbox('${url}')">`;
+                    const slideId = imgName.replace(/\.[^.]+$/, '');
+                    html += `<div class="slide-wrap">
+                        <img class="slide-img" src="${url}" alt="${imgName}" loading="lazy" onclick="openLightbox('${url}')">
+                        <span class="slide-id" onclick="copyId(this,'${slideId}')">${slideId}</span>
+                    </div>`;
                 }
                 html += '</div>';
             }
@@ -391,6 +415,15 @@
             currentSlug = null;
             document.getElementById('detailView').classList.remove('active');
             document.getElementById('listView').classList.remove('hidden');
+        }
+
+        function copyId(el, text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = el.textContent;
+                el.textContent = '已复制 ✓';
+                el.classList.add('copied');
+                setTimeout(() => { el.textContent = orig; el.classList.remove('copied'); }, 1500);
+            });
         }
 
         function copyText(btn) {
