@@ -10,6 +10,51 @@
 - [x] ✅ 没有个人邮箱、电话等信息
 - [x] ✅ 没有数据库密码、证书等敏感文件
 - [x] ✅ 示例配置文件使用 `.example` 后缀
+- [x] ✅ 本地开发配置文件（`ecosystem.*.json`）已加入 `.gitignore`，不追踪
+
+## 🔍 隐私审计规范（每次提交前检查）
+
+本节记录 2026-03-01 隐私审计结论及持续维护规范。
+
+### 禁止提交到 git 的内容
+
+| 类型 | 示例 | .gitignore 规则 |
+|------|------|----------------|
+| 环境变量 | `.env`, `.env.local` | `.env*`（已配置） |
+| 本地开发配置 | `ecosystem.*.json` | `ecosystem.*.json`（已配置） |
+| 私钥 / 证书 | `*.pem`, `*.key` | `*.pem`, `*.key` |
+| 运行日志 | `*.log` | `*.log`（已配置） |
+| 个人文档目录 | `docs/private/` | 手动检查 |
+| 生产 compose 文件 | `data/docker-compose.yml` | 存在于服务器，不在仓库 |
+
+### 每次提交前的快速扫描
+
+```bash
+# 检查是否有内网 IP 或生产服务器 IP 混入
+grep -r "192\.168\." . --include="*.md" --include="*.json" --include="*.sh" --exclude-dir=.git
+
+# 检查是否有本地绝对路径（含用户名）
+grep -r "/Users/\|/home/[a-z]" . --include="*.json" --include="*.sh" --exclude-dir=.git
+
+# 检查是否有硬编码密钥特征
+grep -rE "(password|secret|api.?key)\s*[=:]\s*['\"][^'\"]{8,}" . --include="*.js" --include="*.mjs" --exclude-dir=.git
+```
+
+### 新增文件时的判断标准
+
+提交新文件前，逐一回答：
+
+1. **是否含本机绝对路径？**（`/Users/xxx`、`/home/xxx`）→ 含则不提交
+2. **是否含真实 IP？**（内网 IP `192.168.*`、生产 IP）→ 含则不提交
+3. **是否含凭证？**（密码、token、key 的真实值，非占位符）→ 含则不提交
+4. **是否含个人信息？**（姓名、手机、邮箱）→ 含则不提交
+5. **是否是纯本地配置？**（`ecosystem.local.json`、`.env`）→ 加 `.gitignore` 而非提交
+
+### 审计历史记录
+
+| 日期 | 执行人 | 结论 | 发现问题 |
+|------|--------|------|---------|
+| 2026-03-01 | Claude | 通过 | `ecosystem.xhs-preview.json` 含本地路径（已修复：从 git 移除并加入 `.gitignore`） |
 
 ## 📄 文档完整性
 
