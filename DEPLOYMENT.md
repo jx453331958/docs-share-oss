@@ -217,10 +217,10 @@ echo "0 2 * * * cd /path/to/docs-share && git push backup main" | crontab -
 
 ### 标准更新流程（必须遵守）
 
-所有代码变更必须经过 git，**禁止直接用 scp/rsync 覆盖服务器文件**。
+本项目通过 GitHub Actions 自动构建 Docker 镜像并推送至 GHCR。**生产服务器只需拉取镜像，无需克隆源码。**
 
 ```
-本地修改 → git commit → git push → 服务器 git pull → docker compose up -d --build
+本地修改 → git commit → git push → GitHub Actions 自动构建镜像 → 服务器 docker compose pull && up
 ```
 
 **本地：**
@@ -228,31 +228,55 @@ echo "0 2 * * * cd /path/to/docs-share && git push backup main" | crontab -
 ```bash
 git add <files>
 git commit -m "描述变更"
-git push
+git push  # 推送后 GitHub Actions 自动构建新镜像
 ```
 
-**服务器：**
+**服务器（等 Actions 完成后）：**
 
 ```bash
-cd /path/to/docs-share-oss
-git pull
-docker compose up -d --build
+cd /path/to/docs-share-oss   # 只含 docker-compose.yml + docs/ 数据目录
+docker compose pull
+docker compose up -d
+```
+
+或直接用一键脚本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jx453331958/docs-share-oss/main/install.sh | bash -s update
+```
+
+### 生产服务器目录结构
+
+生产服务器上**只应存在**以下内容，不需要克隆完整源码：
+
+```
+docs-share-oss/
+├── docker-compose.yml   # 使用 image: ghcr.io/...，不是 build: .
+└── docs/                # 文档数据（持久化）
+```
+
+`docker-compose.yml` 示例：
+
+```yaml
+services:
+  docs-share:
+    image: ghcr.io/jx453331958/docs-share-oss:latest
+    container_name: docs-share
+    ports:
+      - "3191:3457"
+    volumes:
+      - ./docs:/app/docs
+    restart: unless-stopped
 ```
 
 ### 禁止事项
 
 | 禁止做法 | 原因 | 正确做法 |
 |---------|------|---------|
-| `scp` 直接覆盖服务器文件 | 会覆盖服务器上的配置差异（如端口映射），且绕过版本控制 | git push + git pull |
-| 未 commit 直接部署 | 无法回滚，他人无法复现 | 先 commit，再部署 |
-| 生产服务器手动修改文件后不同步回 git | 下次部署会被覆盖 | 手动改动必须同步进 git |
-
-### 生产环境端口差异
-
-生产服务器的端口映射 `3191:3457` 已写入 `docker-compose.yml` 并提交 git。
-**不要**在服务器本地维护与 git 不同的 `docker-compose.yml`，否则每次 `git pull` 后都需要手动修复。
-
-如确实需要环境差异配置（不涉及端口），使用 `docker-compose.override.yml` 并将其加入 `.gitignore`。
+| `scp`/`rsync` 直接覆盖服务器文件 | 绕过版本控制，且会破坏服务器本地配置 | git push，等 CI 构建镜像后 pull |
+| 未 commit 直接部署 | 无法回滚，无法复现 | 先 commit + push，再部署 |
+| 服务器用 `build: .` 从源码构建 | 需要克隆完整源码，且不经过 CI，可能与发布镜像不一致 | 使用 `image: ghcr.io/...` 拉取预构建镜像 |
+| 将源码 clone 到生产服务器 | 生产只需数据目录和 compose 文件，源码是多余的 | 仅保留 `docker-compose.yml` + `docs/` |
 
 ## 故障排查
 
